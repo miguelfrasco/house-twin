@@ -368,7 +368,20 @@ export function buildGround(profile, bounds, textureUrl) {
   plane.userData.kind = "ground";
   g.add(plane);
   const a = profile.site?.aerial;
-  if (a && textureUrl) {
+  if (a?.source === "esri" && profile.location?.lat != null) {
+    esriTexture(profile.location.lat, profile.location.lon).then(({ canvas, mpp }) => {
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const w = canvas.width * mpp, h = canvas.height * mpp;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+      m.rotation.x = -Math.PI / 2;
+      m.rotation.z = -((a.rotation_deg || 0) * Math.PI) / 180;
+      const c = a.center || [bounds.cx, bounds.cy];
+      m.position.set(c[0], -0.01, c[1]);
+      m.receiveShadow = true; m.userData.kind = "ground";
+      g.add(m);
+    }).catch(() => {});
+  } else if (a && textureUrl) {
     const loader = new THREE.TextureLoader();
     loader.load(textureUrl, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -376,7 +389,8 @@ export function buildGround(profile, bounds, textureUrl) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
       m.rotation.x = -Math.PI / 2;
       m.rotation.z = -((a.rotation_deg || 0) * Math.PI) / 180;
-      m.position.set(a.origin[0] + w / 2, -0.01, a.origin[1] + h / 2);
+      const c = a.center || [a.origin[0] + w / 2, a.origin[1] + h / 2];
+      m.position.set(c[0], -0.01, c[1]);
       m.receiveShadow = true;
       m.userData.kind = "ground";
       g.add(m);
@@ -393,4 +407,31 @@ export function buildGround(profile, bounds, textureUrl) {
     g.setRotationFromAxisAngle(axis, -ang);
   }
   return g;
+}
+
+/** Esri World Imagery around a point, composed in memory (displayed only, never stored). */
+export async function esriTexture(lat, lon, z = 19, span = 3) {
+  const n = 2 ** z, T = 256;
+  const fx = ((lon + 180) / 360) * n;
+  const sl = Math.sin((lat * Math.PI) / 180);
+  const fy = (0.5 - Math.log((1 + sl) / (1 - sl)) / (4 * Math.PI)) * n;
+  const cx = Math.floor(fx), cy = Math.floor(fy), half = Math.floor(span / 2);
+  const big = document.createElement("canvas");
+  big.width = big.height = span * T;
+  const g = big.getContext("2d");
+  await Promise.all(Array.from({ length: span * span }, (_, i) => new Promise((res) => {
+    const dx = (i % span) - half, dy = Math.floor(i / span) - half;
+    const img = new Image();
+    img.crossOrigin = "anonymous"; img.referrerPolicy = "origin";
+    img.onload = () => { g.drawImage(img, (dx + half) * T, (dy + half) * T); res(); };
+    img.onerror = res;
+    img.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${cy + dy}/${cx + dx}`;
+  })));
+  // crop so the point sits exactly in the centre
+  const px = (fx - cx + half) * T, py = (fy - cy + half) * T, r = Math.min(px, py, big.width - px, big.height - py);
+  const out = document.createElement("canvas");
+  out.width = out.height = Math.floor(r * 2);
+  out.getContext("2d").drawImage(big, px - r, py - r, r * 2, r * 2, 0, 0, r * 2, r * 2);
+  const mpp = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / n;
+  return { canvas: out, mpp };
 }
