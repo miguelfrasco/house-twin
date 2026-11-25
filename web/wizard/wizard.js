@@ -4,7 +4,8 @@ import { emptyProfile, migrate, validate, uid, bearingFromNorthArrow, northArrow
 import { getLang } from "../i18n.js";
 import { cleanImage } from "../api.js";
 import { createMap, geocode, metresPerPixel } from "./map.js";
-import { draftToFloor, rectangleFloor } from "./convert.js";
+import { draftToFloor, rectangleFloor, rectsOf } from "./convert.js";
+import { computeOutline } from "../editor/editor.js";
 import { PLAN_PROMPT, extractJsonClient, sanitizeDraft } from "./prompt.js";
 
 const L = (pt, en) => (getLang() === "pt-PT" ? pt : en);
@@ -99,7 +100,7 @@ docker compose logs house-twin | grep "setup code"   # ${L("código de primeira 
       const m = body.querySelector("#claimMsg"); m.style.display = "";
       const pw = body.querySelector("#claimPw").value;
       if (pw !== body.querySelector("#claimPw2").value) { m.textContent = L("As palavras-passe não coincidem.", "Passwords don't match."); return; }
-      try { await api.post("/api/setup/claim", { code: body.querySelector("#claimCode").value, password: pw }); temp.claimed = true; cfg.authed = true; api.config.authed = true; m.textContent = "✓ " + L("Pronto. É o dono desta casa.", "Done. You own this house."); }
+      try { await api.post("/api/setup/claim", { code: body.querySelector("#claimCode").value, password: pw }); temp.claimed = true; Object.assign(cfg, await api.init()); cfg.authed = true; api.config = cfg; m.textContent = "✓ " + L("Pronto. É o dono desta casa.", "Done. You own this house."); }
       catch (e) { m.textContent = e.status === 403 ? L("Código errado.", "Wrong code.") : e.status === 400 ? L("A palavra-passe precisa de pelo menos 10 caracteres.", "Password needs at least 10 characters.") : e.message; }
     });
   }
@@ -372,7 +373,16 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
   function stepRoof() {
     body.classList.add("one");
     const top = [...w.floors].sort((a, b) => b.elevation - a.elevation)[0];
-    let roof = w.roofs.find((r) => r.floor === top.id);
+    // one roof per rectangle of the top floor's outline (an L-shaped house gets two)
+    const topRoofs = () => w.roofs.filter((r) => r.floor === top.id);
+    if (!topRoofs().length && top.walls.length) {
+      if (!top.outline?.length) top.outline = outlineOf(top);
+      for (const o of rectsOf(top.outline)) {
+        const long = o[1][0] - o[0][0] >= o[2][1] - o[1][1];
+        w.roofs.push({ id: uid("roof"), floor: top.id, type: "gable", pitch_deg: 30, overhang: 0.4, ridge: long ? "x" : "y", outline: o });
+      }
+    }
+    let roof = topRoofs()[0];
     const types = [["gable", L("Duas águas", "Gable")], ["hip", L("Quatro águas", "Hip")], ["shed", L("Uma água", "Shed")], ["flat", L("Plano / terraço", "Flat")]];
     body.innerHTML = `<div><h2>${L("Telhado", "Roof")}</h2>
       <div class="choice" style="grid-template-columns:repeat(4,1fr)">${types.map(([t, n]) => `<button class="opt ${roof?.type === t ? "on" : ""}" data-rt="${t}"><b>${n}</b></button>`).join("")}</div>
@@ -388,16 +398,18 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
       if (!top.outline?.length) top.outline = outlineOf(top);
       if (!roof) { roof = { id: uid("roof"), floor: top.id, type: "gable", pitch_deg: 30, overhang: 0.4, ridge: "x", outline: bbox4(top.outline) }; w.roofs.push(roof); }
     };
-    body.querySelectorAll("[data-rt]").forEach((b) => (b.onclick = () => { ensure(); roof.type = b.dataset.rt; body.querySelectorAll("[data-rt]").forEach((x) => x.classList.toggle("on", x === b)); }));
-    body.querySelector("#rP").onchange = (e) => { ensure(); roof.pitch_deg = Math.max(5, Math.min(60, +e.target.value)); };
-    body.querySelector("#rO").onchange = (e) => { ensure(); roof.overhang = Math.max(0, +e.target.value); };
+    const all = (k, v) => { ensure(); for (const r of topRoofs()) r[k] = v; };
+    body.querySelectorAll("[data-rt]").forEach((b) => (b.onclick = () => { all("type", b.dataset.rt); body.querySelectorAll("[data-rt]").forEach((x) => x.classList.toggle("on", x === b)); }));
+    body.querySelector("#rP").onchange = (e) => all("pitch_deg", Math.max(5, Math.min(60, +e.target.value)));
+    body.querySelector("#rO").onchange = (e) => all("overhang", Math.max(0, +e.target.value));
     body.querySelector("#rR").onchange = (e) => { ensure(); roof.ridge = e.target.value; };
+    if (topRoofs().length > 1) body.querySelector("#rR").closest("label").title = L("Aplica-se ao primeiro volume; os outros seguem o lado mais comprido.", "Applies to the first volume; the others follow their longer side.");
     body.querySelector("#tT").onchange = (e) => (w.site.terrain.type = e.target.value);
     body.querySelector("#tG").onchange = (e) => (w.site.terrain.grade_pct = Math.max(0, Math.min(60, +e.target.value)));
     body.querySelector("#tD").onchange = (e) => (w.site.terrain.direction_deg = ((+e.target.value % 360) + 360) % 360);
   }
   const bbox4 = (pts) => { const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]); const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys); return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]; };
-  const outlineOf = (f) => bbox4(f.walls.flatMap((x) => [x.a, x.b]).concat(f.rooms.flatMap((r) => r.polygon)));
+  const outlineOf = (f) => { try { const o = computeOutline(f); if (o?.length >= 3) return o; } catch {} return bbox4(f.walls.flatMap((x) => [x.a, x.b]).concat(f.rooms.flatMap((r) => r.polygon))); };
 
   // ---------------------------------------------------------------- 8. modules
   function stepModules() {

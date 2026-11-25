@@ -50,3 +50,31 @@ export function rectangleFloor(width = 10, depth = 8) {
     ],
   };
 }
+
+/**
+ * Split a right-angled outline (e.g. an L-shaped house) into a few rectangles, one roof each.
+ * Non-orthogonal outlines fall back to their bounding box.
+ */
+export function rectsOf(outline, minArea = 4) {
+  if (!outline || outline.length < 3) return [];
+  const bb = (pts) => { const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+  const ortho = outline.every((p, i) => { const q = outline[(i + 1) % outline.length]; return Math.abs(p[0] - q[0]) < 0.05 || Math.abs(p[1] - q[1]) < 0.05; });
+  if (!ortho) { const [x0, y0, x1, y1] = bb(outline); return [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]; }
+  const uniq = (a) => [...new Set(a.map((v) => Math.round(v * 100) / 100))].sort((m, n) => m - n);
+  const xs = uniq(outline.map((p) => p[0])), ys = uniq(outline.map((p) => p[1]));
+  const inside = (x, y) => { let c = false; for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) { const [xi, yi] = outline[i], [xj, yj] = outline[j]; if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; };
+  const nx = xs.length - 1, ny = ys.length - 1;
+  const cell = Array.from({ length: ny }, (_, j) => Array.from({ length: nx }, (_, i) => inside((xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2)));
+  const used = cell.map((r) => r.map(() => false));
+  const out = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    if (!cell[j][i] || used[j][i]) continue;
+    let i2 = i; while (i2 + 1 < nx && cell[j][i2 + 1] && !used[j][i2 + 1]) i2++;
+    let j2 = j; const rowOk = (jj) => { for (let k = i; k <= i2; k++) if (!cell[jj][k] || used[jj][k]) return false; return true; };
+    while (j2 + 1 < ny && rowOk(j2 + 1)) j2++;
+    for (let jj = j; jj <= j2; jj++) for (let k = i; k <= i2; k++) used[jj][k] = true;
+    const r = [[xs[i], ys[j]], [xs[i2 + 1], ys[j]], [xs[i2 + 1], ys[j2 + 1]], [xs[i], ys[j2 + 1]]];
+    if ((r[1][0] - r[0][0]) * (r[2][1] - r[1][1]) >= minArea) out.push(r);
+  }
+  return out;
+}

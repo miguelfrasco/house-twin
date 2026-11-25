@@ -182,7 +182,7 @@ function showLogin() {
   sh.querySelector(".close").onclick = () => sh.classList.add("hidden");
   const go = async () => {
     try { await api.post("/api/login", { password: sh.querySelector("#pw").value }); location.reload(); }
-    catch (e) { const er = sh.querySelector("#err"); er.textContent = e.status === 429 ? "Too many attempts. Wait a minute." : "Wrong password."; er.classList.remove("hidden"); }
+    catch (e) { const er = sh.querySelector("#err"); const pt = getLang() === "pt-PT"; er.textContent = e.status === 429 ? (pt ? "Demasiadas tentativas. Aguarde um minuto." : "Too many attempts. Wait a minute.") : (pt ? "Palavra-passe errada." : "Wrong password."); er.classList.remove("hidden"); }
   };
   sh.querySelector("#go").onclick = go;
   sh.querySelector("#pw").onkeydown = (e) => e.key === "Enter" && go();
@@ -222,6 +222,7 @@ async function boot() {
 function renderChromeEmpty() {
   $("#houseName").textContent = t("app");
   document.querySelectorAll("[data-t]").forEach((el) => (el.textContent = t(el.dataset.t)));
+  $("#langBtn").textContent = getLang() === "pt-PT" ? "EN" : "PT";
 }
 
 boot().catch((e) => {
