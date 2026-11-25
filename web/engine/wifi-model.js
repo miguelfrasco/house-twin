@@ -16,7 +16,7 @@ export function pathTerms(profile, ap, floorId, pos) {
   const dz = (fb?.elevation ?? 0) - (fa?.elevation ?? 0) + ((ap.height ?? 1.8) - 1.0);
   const d = Math.max(0.5, Math.hypot(pos[0] - ap.pos[0], pos[1] - ap.pos[1], dz));
   let wi = 0, we = 0;
-  for (const w of fb?.walls || []) if (segCross(ap.pos, pos, w.a, w.b)) { if ((w.thickness ?? 0.2) >= 0.2) we++; else wi++; }
+  for (const w of fb?.walls || []) if (segCross(ap.pos, pos, w.a, w.b)) { if (w.exterior ?? (w.thickness ?? 0.2) >= 0.2) we++; else wi++; }
   const lo = Math.min(fa?.elevation ?? 0, fb?.elevation ?? 0), hi = Math.max(fa?.elevation ?? 0, fb?.elevation ?? 0);
   const fl = profile.floors.filter((f) => f.elevation > lo + 0.01 && f.elevation <= hi + 0.01).length;
   return { d, wi, we, fl };
@@ -45,8 +45,10 @@ function solve(A, b) {
  * exponent n and, when walls vary between points, the interior wall loss. A point may name its AP (s.ap);
  * otherwise the strongest predicted AP is assumed.
  */
+const PRIOR = 0.7;
 export function calibrate(profile, wifi) {
   let model = { ...DEF, ...(wifi.model || {}) };
+  const base = model;
   const pts = (wifi.survey || []).filter((s) => Number.isFinite(s.rssi) && s.pos);
   const aps = wifi.aps || [];
   if (!pts.length || !aps.length) return { model, offset: 0, n: 0, rmse: null, fitted: [] };
@@ -61,8 +63,14 @@ export function calibrate(profile, wifi) {
     });
     const wallsVary = new Set(rows.map((r) => r.x[2])).size > 1;
     const k = pts.length >= 8 && wallsVary ? 3 : pts.length >= 5 ? 2 : 1;
-    const A = Array.from({ length: k }, (_, i) => Array.from({ length: k }, (_, j) => rows.reduce((a, r) => a + r.x[i] * r.x[j], 0)));
-    const b = Array.from({ length: k }, (_, i) => rows.reduce((a, r) => a + r.x[i] * r.y, 0));
+    // weak priors (about half a point each) keep n and wall_db near the starting model when a few points
+    // can't separate them from the offset; a big survey overrides them
+    const prior = [];
+    if (k >= 2) prior.push({ y: 10 * PRIOR * base.n, x: [0, 10 * PRIOR, 0] });
+    if (k >= 3) prior.push({ y: 3 * PRIOR * base.wall_db, x: [0, 0, 3 * PRIOR] });
+    const all = rows.concat(prior);
+    const A = Array.from({ length: k }, (_, i) => Array.from({ length: k }, (_, j) => all.reduce((a, r) => a + r.x[i] * r.x[j], 0)));
+    const b = Array.from({ length: k }, (_, i) => all.reduce((a, r) => a + r.x[i] * r.y, 0));
     const sol = solve(A, b);
     if (!sol) break;
     if (k >= 2) model = { ...model, n: Math.min(5, Math.max(1.6, sol[1])) };

@@ -34,3 +34,21 @@ test("site: ramps interpolate height, sunken areas cut the ground and gates are 
   assert.equal(s.gates.length, 1);
   assert.equal(s.occluders.length, 3); // 4 retaining walls minus the open edge
 });
+
+test("detected walls are exterior when one side is outdoors", async () => {
+  const { classifyWalls } = await import("../web/engine/slice.js");
+  const rooms = [{ polygon: [[0, 0], [5, 0], [5, 4], [0, 4]] }, { polygon: [[5, 0], [9, 0], [9, 4], [5, 4]] }];
+  const [ext, int] = classifyWalls([{ a: [0, 0], b: [9, 0], thickness: 0.3 }, { a: [5, 0], b: [5, 4], thickness: 0.2 }], rooms);
+  assert.equal(ext.exterior, true); assert.equal(int.exterior, false);
+});
+
+test("site: sloped paving follows vertex_y; cut:false keeps the lawn whole", async () => {
+  const { buildSite, groundHoles } = await import("../web/engine/site.js");
+  const sq = [[0, 0], [4, 0], [4, 4], [0, 4]];
+  const prof = { site: { features: [{ type: "paving", polygon: sq, y: 0, vertex_y: [0, -1, -1, 0] }, { type: "sunken", polygon: sq, y: -2, cut: false, floor: false }] } };
+  const { group, occluders } = buildSite(prof);
+  const p = group.children[0].geometry.attributes.position; const ys = [];
+  for (let i = 0; i < p.count; i++) ys.push(Math.round((p.getY(i) + group.children[0].position.y) * 100) / 100);
+  assert.ok(Math.abs(Math.min(...ys) + 1) < 0.02 && Math.abs(Math.max(...ys)) < 0.02);
+  assert.equal(groundHoles(prof).length, 0); assert.equal(occluders.length, 4); assert.equal(group.children.length, 5);
+});

@@ -74,6 +74,8 @@ export function validate(profile) {
     const sp = `site.features[${i}]`;
     if (!SITE_FEATURES.includes(f.type)) return err(`${sp}.type`, SITE_FEATURES.join(" | "));
     if (["sunken", "paving"].includes(f.type) && !(Array.isArray(f.polygon) && f.polygon.length >= 3 && f.polygon.every(isPt))) err(`${sp}.polygon`, "≥ 3 points [x,y]");
+    if (f.vertex_y !== undefined && !(Array.isArray(f.vertex_y) && f.vertex_y.length === f.polygon?.length && f.vertex_y.every((v) => isNum(v) && v > -50 && v < 50))) err(`${sp}.vertex_y`, "one height per polygon point");
+    for (const k of ["cut", "floor"]) if (f[k] !== undefined && typeof f[k] !== "boolean") err(`${sp}.${k}`, "true | false");
     if (f.type === "ramp" && !(Array.isArray(f.path) && f.path.length >= 2 && f.path.every(isPt))) err(`${sp}.path`, "≥ 2 points [x,y]");
     if (["wall", "gate"].includes(f.type) && !(isPt(f.a) && isPt(f.b))) err(sp, "a and b must be [x,y]");
     if (f.entity_id !== undefined && !/^cover\.[\w-]+$/.test(f.entity_id)) err(`${sp}.entity_id`, "a cover.* entity");
@@ -99,6 +101,7 @@ export function validate(profile) {
       else if (Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]) < 0.05) err(wp, "too short");
       if (w.thickness !== undefined && !(isNum(w.thickness) && w.thickness > 0.02 && w.thickness < 1.5)) err(`${wp}.thickness`, "0.02..1.5 m");
       if (w.height !== undefined && !(isNum(w.height) && w.height > 0.2 && w.height <= 10)) err(`${wp}.height`, "0.2..10 m");
+      if (w.exterior !== undefined && typeof w.exterior !== "boolean") err(`${wp}.exterior`, "true | false");
     });
     (f.rooms || []).forEach((r, j) => {
       const rp = `${fp}.rooms[${j}]`;
@@ -121,6 +124,8 @@ export function validate(profile) {
       }
     });
     if (f.model && !isStr(f.model.asset)) err(`${fp}.model.asset`, "asset id");
+    const c = f.model?.crop;
+    if (c && !(["x0", "y0", "x1", "y1"].every((k) => isNum(c[k])) && c.x1 > c.x0 && c.y1 > c.y0 && (c.min_h === undefined || isNum(c.min_h)))) err(`${fp}.model.crop`, "{x0, y0, x1, y1, min_h?} in metres");
   });
   (p.roofs || []).forEach((r, i) => {
     const rp = `roofs[${i}]`;

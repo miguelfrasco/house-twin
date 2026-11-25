@@ -93,3 +93,24 @@ export function wallsFromLines(lines, { minT = 0.05, maxT = 0.5, minLen = 0.5 } 
 export function wallsFromModel(root, floorElevation, height = 1.2) {
   return wallsFromLines(mergeLines(sliceAt(root, floorElevation + height)));
 }
+
+const inPoly = ([x, y], poly) => {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; }
+  return c;
+};
+
+/** Mark walls as exterior when one side is outside every indoor room (probes 0.35 m either side of the middle). */
+export function classifyWalls(walls, rooms) {
+  const indoor = rooms.filter((r) => !r.outdoor && r.type !== "outdoor").map((r) => r.polygon);
+  const inside = (p) => indoor.some((poly) => inPoly(p, poly));
+  return walls.map((w) => {
+    const L = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]) || 1, nx = -(w.b[1] - w.a[1]) / L, ny = (w.b[0] - w.a[0]) / L;
+    let outside = 0;
+    for (const t of [0.25, 0.5, 0.75]) {
+      const mx = w.a[0] + (w.b[0] - w.a[0]) * t, my = w.a[1] + (w.b[1] - w.a[1]) * t, d = (w.thickness ?? 0.2) / 2 + 0.35;
+      if (!inside([mx + nx * d, my + ny * d]) || !inside([mx - nx * d, my - ny * d])) outside++;
+    }
+    return { ...w, exterior: outside >= 2 };
+  });
+}

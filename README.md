@@ -123,6 +123,10 @@ Around the house, `site.features` takes `sunken` (cuts the lawn, adds retaining 
 ] }
 ```
 
+Sloped ground: `paving` and `sunken` take `vertex_y` (one height per polygon point), so a driveway, a ramp of any shape or a green bank can be drawn as a polygon. `sunken` with `"floor": false` only cuts the lawn and builds retaining walls (from each point's `vertex_y` up to 0); other features then draw the floors.
+
+Floors built from a 3D model (`floors[].model`) can drop CAD extras such as a garden slab or a pool with `"crop": { "x0": -14, "y0": -8, "x1": 14, "y1": 3.4, "min_h": -0.5 }` (plan metres; meshes reaching outside are hidden). Their walls are not drawn, but they still feed the Wi-Fi prediction: in the editor, "Detect walls from the model" slices the model at 1.2 m and marks walls with an outdoor side as exterior (`"exterior": true`).
+
 See `web/demo/profile.json` for a complete example and `web/profile/profile.js` for validation. A sample plan image to try the wizard with is in `examples/`.
 
 ## Architecture

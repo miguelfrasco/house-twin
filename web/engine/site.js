@@ -3,7 +3,9 @@
 //
 // profile.site.features = [
 //   { type: "sunken", polygon: [[x,y]...], y: -2.9 }          cut in the ground with retaining walls, paved floor at y
-//   { type: "paving", polygon: [[x,y]...], y: 0, color? }     flat paved area
+//       optional: vertex_y [per-vertex floor height], open_edges [edge indexes without a wall],
+//       floor: false (cut + walls only, floors drawn by other features), cut: false (walls only)
+//   { type: "paving", polygon: [[x,y]...], y: 0, color?, vertex_y? }   paved (or green) area, sloped with vertex_y
 //   { type: "ramp", path: [[x,y]...], width: 3.4, y0, y1 }    driveway strip, height interpolated along the path
 //   { type: "wall", a: [x,y], b: [x,y], y: 0, height: 1.8, thickness: 0.2 }
 //   { type: "gate", a, b, y, height: 1.8, style: "sliding" | "swing" | "up", entity_id?: "cover.x" }
@@ -20,13 +22,22 @@ const MAT = {
 
 /** Polygons that cut the lawn (sunken features). */
 export function groundHoles(profile) {
-  return (profile.site?.features || []).filter((f) => f.type === "sunken" && f.polygon?.length >= 3 && (f.y ?? 0) < -0.05).map((f) => f.polygon);
+  return (profile.site?.features || []).filter((f) => f.type === "sunken" && f.cut !== false && f.polygon?.length >= 3 && (f.y ?? 0) < -0.05).map((f) => f.polygon);
 }
 
-function shapeMesh(poly, y, mat) {
+function shapeMesh(poly, y, mat, vy) {
   const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
   const g = new THREE.ShapeGeometry(shape);
   g.rotateX(-Math.PI / 2);
+  if (vy) { // per-vertex heights: ShapeGeometry keeps the outline points (maybe reversed), match each to the nearest
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      let best = 0, bd = Infinity;
+      poly.forEach(([x, z], k) => { const d = (p.getX(i) - x) ** 2 + (p.getZ(i) - z) ** 2; if (d < bd) { bd = d; best = k; } });
+      p.setY(i, (vy[best] ?? 0) - y);
+    }
+    g.computeVertexNormals();
+  }
   const m = new THREE.Mesh(g, mat);
   m.position.y = y;
   m.receiveShadow = true;
@@ -34,9 +45,9 @@ function shapeMesh(poly, y, mat) {
 }
 
 /** Vertical quad between two plan points from y0 to y1. */
-function vquad(a, b, y0, y1, mat) {
+function vquad(a, b, y0, y1, mat, y0b = y0) {
   const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute([a[0], y0, a[1], b[0], y0, b[1], b[0], y1, b[1], a[0], y1, a[1]], 3));
+  g.setAttribute("position", new THREE.Float32BufferAttribute([a[0], y0, a[1], b[0], y0b, b[1], b[0], y1, b[1], a[0], y1, a[1]], 3));
   g.setIndex([0, 1, 2, 0, 2, 3]);
   g.computeVertexNormals();
   const m = new THREE.Mesh(g, mat);
@@ -81,15 +92,15 @@ export function buildSite(profile) {
   const gates = [], occluders = [];
   for (const f of profile.site?.features || []) {
     if ((f.type === "sunken" || f.type === "paving") && f.polygon?.length >= 3) {
-      const y = f.y ?? 0;
+      const y = f.y ?? 0, vy = Array.isArray(f.vertex_y) && f.vertex_y.length === f.polygon.length ? f.vertex_y : null;
       const mat = MAT.paving(); if (f.color) mat.color.set(f.color);
-      group.add(shapeMesh(f.polygon, y + 0.005, mat));
+      if (f.floor !== false) group.add(shapeMesh(f.polygon, y + 0.005, mat, vy && vy.map((v) => v + 0.005)));
       if (f.type === "sunken" && y < -0.05) {
         const rm = MAT.retaining();
         for (let i = 0; i < f.polygon.length; i++) {
-          const a = f.polygon[i], b = f.polygon[(i + 1) % f.polygon.length];
+          const j = (i + 1) % f.polygon.length, a = f.polygon[i], b = f.polygon[j];
           if (f.open_edges?.includes(i)) continue; // edges that continue into a ramp or a building
-          const w = vquad(a, b, y, 0, rm); group.add(w); occluders.push(w);
+          const w = vquad(a, b, vy ? vy[i] : y, 0, rm, vy ? vy[j] : y); group.add(w); occluders.push(w);
         }
       }
     } else if (f.type === "ramp" && f.path?.length >= 2) {

@@ -107,6 +107,7 @@ export class Viewer {
         });
         this.house.floors.get(f.id).structure.add(m);
         this.house.floors.get(f.id).model = m;
+        if (f.model.crop) cropModel(m, f.model.crop, f.elevation);
         m.userData.modelRoot = true;
         applyModelOverrides(m, profile.modules?.furniture?.overrides);
       } catch (e) { console.warn("model failed", e); }
@@ -299,4 +300,19 @@ export class Viewer {
   }
 
   snapshot() { return this.renderer.domElement.toDataURL("image/png"); }
+}
+
+/** Hide model meshes that reach outside crop {x0, y0, x1, y1} (plan metres) or below min_h (metres from the floor):
+ *  CAD exports often include the garden, the plot slab or a pool that the site features replace. */
+export function cropModel(root, c, elevation = 0) {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3(), e = 0.05;
+  let hidden = 0;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    box.setFromObject(o);
+    const out = box.min.x < c.x0 - e || box.max.x > c.x1 + e || box.min.z < c.y0 - e || box.max.z > c.y1 + e || (c.min_h != null && box.min.y < elevation + c.min_h);
+    if (out) { o.visible = false; hidden++; }
+  });
+  return hidden;
 }

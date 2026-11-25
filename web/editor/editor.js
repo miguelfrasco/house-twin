@@ -339,8 +339,8 @@ export function openEditor(ctx, opts = {}) {
       on("#fSlice", "click", async () => {
         const st = ctx.viewer.house?.floors.get(f.id)?.structure;
         if (!st) return ctx.toast(L("Modelo ainda não carregado", "Model not loaded yet"));
-        const { wallsFromModel } = await import("../engine/slice.js");
-        const found = wallsFromModel(st, f.elevation, Math.min(1.2, f.height / 2));
+        const { wallsFromModel, classifyWalls } = await import("../engine/slice.js");
+        const found = classifyWalls(wallsFromModel(st, f.elevation, Math.min(1.2, f.height / 2)), f.rooms);
         if (!found.length) return ctx.toast(L("Não encontrei paredes no modelo", "No walls found in the model"));
         if (f.walls.length && !confirm(L(`Substituir as ${f.walls.length} paredes deste piso por ${found.length} detetadas no modelo?`, `Replace this floor's ${f.walls.length} walls with ${found.length} found in the model?`))) return;
         f.walls = found.map((w) => ({ id: uid("w"), ...w })); f.openings = [];
