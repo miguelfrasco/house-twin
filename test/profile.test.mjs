@@ -42,3 +42,12 @@ test("north arrow and bearing round-trip", () => {
   for (const b of [0, 45, 100, 270, 359]) assert.equal(bearingFromNorthArrow(northArrowFromBearing(b)), b);
   assert.equal(bearingFromNorthArrow(0), 90); // north is plan-up -> +x points east
 });
+
+test("wall display settings are checked", () => {
+  const p = structuredClone(demo);
+  p.display = { walls: "quarter", wall_cut: 5 };
+  const e = validate(p).errors.join();
+  assert.match(e, /display\.walls/); assert.match(e, /display\.wall_cut/);
+  p.display = { walls: "full", wall_cut: 1.5 };
+  assert.deepEqual(validate(p).errors, []);
+});

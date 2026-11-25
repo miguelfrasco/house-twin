@@ -19,7 +19,7 @@ export default {
   id: "solar",
   icon: "🔆",
   activate(ctx) { ctx.viewer.pvVisible = true; ctx.viewer.applyFocus(); },
-  deactivate() {},
+  deactivate(ctx) { ctx.viewer.pvVisible = false; ctx.viewer.applyFocus(); },
   onSun(ctx) { const el = document.querySelector("#pvNow"); if (el) el.textContent = this.nowKw(ctx); },
   nowKw(ctx) {
     const L = ctx.profile.location;

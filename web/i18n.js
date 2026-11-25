@@ -23,6 +23,8 @@ const S = {
     export_scrubbed: "Download a shareable copy (no location, names, networks or photos)",
     export_full: "Download a full private backup",
     north: "N",
+    show: "Show", details: "Details", homeassistant_layer: "Devices", no_layers: "Turn on a layer under Show to see its details here.",
+    walls_half: "Half-height walls", walls_full: "Full-height walls", layer_off: "Hidden", furniture_tool: "Arrange furniture",
   },
   "pt-PT": {
     app: "Gémeo da casa", demo: "Casa de demonstração", demo_note: "Casa fictícia de demonstração. Nada aqui é um sítio real.",
@@ -47,6 +49,8 @@ const S = {
     export_scrubbed: "Transferir uma cópia partilhável (sem localização, nomes, redes ou fotografias)",
     export_full: "Transferir uma cópia de segurança privada completa",
     north: "N",
+    show: "Mostrar", details: "Detalhes", homeassistant_layer: "Dispositivos", no_layers: "Ligue uma camada em Mostrar para ver aqui os detalhes.",
+    walls_half: "Paredes a meia altura", walls_full: "Paredes inteiras", layer_off: "Oculta", furniture_tool: "Arrumar a mobília",
   },
 };
 

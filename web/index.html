@@ -16,7 +16,7 @@
 <div id="labels"></div>
 <header class="glass topbar">
   <div class="brand"><span class="logo">⌂</span><div><b id="houseName">House twin</b><small id="houseSub"></small></div></div>
-  <nav class="modules" id="modTabs"></nav>
+  <span class="tb-gap"></span>
   <div class="tb-right">
     <button id="langBtn" class="chip" aria-label="Language">PT</button>
     <button id="editBtn" class="chip">✎ <span data-t="edit">Edit</span></button>
@@ -24,7 +24,9 @@
   </div>
 </header>
 <div id="menu" class="glass menu hidden"></div>
-<aside class="glass panel left" id="panel"></aside>
+<nav class="glass filterbar" id="layerBar" aria-label="Layers"></nav>
+<button class="glass details-btn" id="detailsBtn" aria-controls="panel" aria-expanded="false"><span aria-hidden="true">☰</span><span>Details</span></button>
+<aside class="glass panel left" id="panel" inert></aside>
 <div class="glass floorbar" id="floorBar"></div>
 <div class="glass timebar" id="timeBar">
   <input type="date" id="dateIn" aria-label="Date">

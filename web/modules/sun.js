@@ -67,12 +67,15 @@ async function computeAll(ctx) {
 
 function drawHeat(ctx) {
   ctx.viewer.clearOverlays("sunheat");
-  const show = ctx.state.floor ? [ctx.state.floor] : [];
+  if (ctx.surface !== "sun") return; // the Wi-Fi map has the floors
+  const show = ctx.state.floor ? [ctx.state.floor] : ctx.profile.floors.map((f) => f.id); // upper slabs hide the floors below
   for (const fid of show) {
     const r = results.get(fid);
     if (!r) continue;
     const f = ctx.floorById(fid);
-    const m = cellMesh(r.cells, r.cell, f.elevation + 0.04, (c) => sunColor(c.hours, r.dayLength || 12));
+    // whole-house view: rooms only (the garden grid would bury everything else); one floor: rooms and garden
+    const cells = ctx.state.floor ? r.cells : r.cells.filter((c) => c.room !== "_garden");
+    const m = cellMesh(cells, r.cell, f.elevation + 0.04, (c) => sunColor(c.hours, r.dayLength || 12));
     m.userData.overlay = "sunheat";
     m.userData.floorId = fid;
     ctx.viewer.overlays.add(m);
@@ -87,6 +90,7 @@ export default {
   onSun(ctx, s) { placeOrb(ctx, s); const el = document.querySelector("#sunNow"); if (el) el.textContent = s.el > 0 ? `${fmtNum(s.el, 0)}°` : "—"; },
   onDate(ctx) { drawArc(ctx); computeAll(ctx); },
   onFloor(ctx) { drawHeat(ctx); },
+  onLayers(ctx) { drawHeat(ctx); },
   results: () => results,
   panel(ctx, el) {
     const { t, esc } = ctx;

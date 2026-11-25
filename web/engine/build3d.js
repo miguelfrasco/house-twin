@@ -107,8 +107,21 @@ function materials() {
     roofFlat: new THREE.MeshStandardMaterial({ color: COLORS.roofFlat, roughness: 0.9 }),
     frame: new THREE.MeshStandardMaterial({ color: COLORS.frame, roughness: 0.5 }),
     panel: new THREE.MeshStandardMaterial({ color: COLORS.panel, roughness: 0.25, metalness: 0.5 }),
+    ghost: ghostMaterial(),
+    edge: new THREE.LineBasicMaterial({ color: 0x5ce1ff, transparent: true, opacity: 0.26, depthWrite: false }),
     rooms: Object.fromEntries(Object.entries(COLORS.room).map(([k, c]) => [k, new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 })])),
   };
+}
+
+/** Upper part of a cut-away wall: faint glass, so rooms read from above while the wall keeps its shape. */
+export function ghostMaterial() {
+  return new THREE.MeshStandardMaterial({ color: COLORS.glass, transparent: true, opacity: 0.09, roughness: 0.1, metalness: 0, depthWrite: false, side: THREE.DoubleSide });
+}
+
+/** Wall display settings from the profile: { mode: "half" | "full", cut: metres above the floor }. */
+export function wallDisplay(profile) {
+  const d = profile?.display || {};
+  return { mode: d.walls === "full" ? "full" : "half", cut: Math.min(2.4, Math.max(0.6, +d.wall_cut || 1.2)) };
 }
 
 /** Roof faces as quads/triangles in scene coords. */
@@ -252,8 +265,30 @@ function panelsFlat(rf, a, count, bearing, mat) {
  */
 export function buildHouse(profile, opts = {}) {
   const M = materials();
+  const disp = wallDisplay(profile);
+  const half = disp.mode === "half";
   const root = new THREE.Group();
   root.name = "house";
+  // a solid lower part and, above the cut, a glass "ghost" with faint edges; both still cast shadows and block the sun
+  const addWallBox = (structure, w, p, e, t, ext0, ext1, mat, data, occluders) => {
+    const cutY = e + disp.cut;
+    const y0 = e + p.y0, y1 = e + p.y1;
+    if (!half || y1 <= cutY + 0.01) {
+      const m = boxAlong(w, p.s0, p.s1, y0, y1, t, ext0, ext1, mat);
+      m.castShadow = true; m.receiveShadow = true; m.userData = { ...data };
+      structure.add(m); occluders.push(m);
+      return;
+    }
+    if (y0 < cutY - 0.01) {
+      const m = boxAlong(w, p.s0, p.s1, y0, cutY, t, ext0, ext1, mat);
+      m.castShadow = true; m.receiveShadow = true; m.userData = { ...data };
+      structure.add(m); occluders.push(m);
+    }
+    const g = boxAlong(w, p.s0, p.s1, Math.max(y0, cutY), y1, t, ext0, ext1, M.ghost);
+    g.castShadow = true; g.userData = { ...data, ghost: true };
+    g.add(new THREE.LineSegments(new THREE.EdgesGeometry(g.geometry), M.edge));
+    structure.add(g); occluders.push(g);
+  };
   const occluders = [];
   const floors = new Map();
   const allPts = [];
@@ -289,10 +324,7 @@ export function buildHouse(profile, opts = {}) {
         const mat = extIds.has(w.id) ? M.wallExt : M.wall;
         pieces.forEach((p, i) => {
           const ext0 = p.s0 === 0 ? t / 2 : 0, ext1 = i === pieces.length - 1 && p.kind === undefined && Math.abs(p.s1 - Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1])) < 0.01 ? t / 2 : 0;
-          const m = boxAlong(w, p.s0, p.s1, e + p.y0, e + p.y1, t, ext0, ext1, mat);
-          m.castShadow = true; m.receiveShadow = true;
-          m.userData = { kind: "wall", wallId: w.id, floorId: f.id };
-          structure.add(m); occluders.push(m);
+          addWallBox(structure, w, p, e, t, ext0, ext1, mat, { kind: "wall", wallId: w.id, floorId: f.id }, occluders);
         });
         for (const o of ops) {
           const sill = o.sill || 0;
@@ -306,11 +338,9 @@ export function buildHouse(profile, opts = {}) {
             fr(o.offset, o.offset + 0.04, sill, sill + o.height);
             fr(o.offset + o.width - 0.04, o.offset + o.width, sill, sill + o.height);
           } else if (o.type === "door") {
-            structure.add(leafAjar(w, o, e, M.door));
+            structure.add(leafAjar(w, o, e, M.door, half ? Math.min(o.height, disp.cut) : o.height));
           } else if (o.type === "garage") {
-            const d = boxAlong(w, o.offset + 0.02, o.offset + o.width - 0.02, e, e + o.height, 0.06, 0, 0, M.garage);
-            d.castShadow = true; d.userData = { kind: "garage", openingId: o.id };
-            structure.add(d); occluders.push(d);
+            addWallBox(structure, w, { s0: o.offset + 0.02, s1: o.offset + o.width - 0.02, y0: 0, y1: o.height }, e, 0.06, 0, 0, M.garage, { kind: "garage", openingId: o.id }, occluders);
           }
         }
       }
@@ -393,17 +423,17 @@ export function buildHouse(profile, opts = {}) {
   root.add(pv);
   const b = allPts.length ? bbox(allPts) : { x0: -5, y0: -5, x1: 5, y1: 5, w: 10, h: 10, cx: 0, cy: 0 };
   const top = Math.max(...profile.floors.map((f) => f.elevation + f.height)) + 3;
-  return { root, floors, roofs, pv, arrays, occluders, roofFaces: roofFaceList, bounds: { ...b, top } };
+  return { root, floors, roofs, pv, arrays, occluders, roofFaces: roofFaceList, bounds: { ...b, top }, display: disp };
 }
 
-function leafAjar(w, o, e, mat) {
+function leafAjar(w, o, e, mat, height = o.height) {
   const f = wallFrame(w);
   const hingeX = w.a[0] + f.ux * o.offset, hingeZ = w.a[1] + f.uy * o.offset;
   const g = new THREE.Group();
   g.position.set(hingeX, e, hingeZ);
   g.rotation.y = -f.angle - 0.9; // 0.9 rad ajar
-  const leaf = new THREE.Mesh(new THREE.BoxGeometry(o.width - 0.04, o.height - 0.02, 0.045), mat);
-  leaf.position.set((o.width - 0.04) / 2 + 0.02, (o.height - 0.02) / 2, 0);
+  const leaf = new THREE.Mesh(new THREE.BoxGeometry(o.width - 0.04, height - 0.02, 0.045), mat);
+  leaf.position.set((o.width - 0.04) / 2 + 0.02, (height - 0.02) / 2, 0);
   leaf.castShadow = true;
   leaf.userData = { kind: "door", openingId: o.id };
   g.add(leaf);

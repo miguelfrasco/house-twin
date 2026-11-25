@@ -76,6 +76,8 @@ function catalogue(ctx) {
 export default {
   id: "furniture",
   icon: "🛋",
+  tool: true, // edits the scene; not a layer you show or hide
+  isPlacing: () => !!placing,
   activate(ctx) { draft = null; sel = null; dirty = false; editModel = false; ctx.viewer.pickModel = (hit) => modelPick(ctx, hit); },
   deactivate(ctx) {
     ctx.viewer.pickModel = null; highlight(ctx, null); placing = null; ctx.hint(null);

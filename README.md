@@ -6,7 +6,7 @@ It runs on **your** infrastructure: free on Cloudflare Workers, or in Docker on 
 
 ![Sun exposure on the demo house](docs/screenshot-sun.jpg)
 
-**Try the demo:** a fictional house ("Casa Exemplo"). You can run the whole setup wizard and the editor; anything you save stays in your browser.
+**Try the demo:** a fictional house ("Casa Exemplo"). You can run the whole setup guide and the editor; anything you save stays in your browser.
 
 ## What it does
 
@@ -21,25 +21,36 @@ It runs on **your** infrastructure: free on Cloudflare Workers, or in Docker on 
 | **Cameras** 📷 | View cones in 3D (direction, angle and range set in the editor); live snapshot through Home Assistant. |
 | **Furniture** 🛋 | Simple furniture pieces you can add, move and turn, and pieces of an imported model you can move, turn or hide. |
 | **Site** | Sunken forecourts, paving, ramps, boundary walls and gates (gates follow a Home Assistant cover) in `site.features`. Roof view for the solar layout. |
+| **One view, layers** | Everything is stacked in one 3D scene. The **Show** bar turns layers on and off (sun, plants, Wi-Fi, devices, solar, cameras; several at once, remembered in the browser; Wi-Fi starts off). The **Details** panel is closed by default; open it for sun hours per room, plants to water, device states and so on, for whichever layer or object you pick. Links can preset this: `?layers=sun,plants&panel=1`. |
+| **Half-height walls** | The lower part of every wall is solid and the upper part is glass with faint edges, so you can see into the rooms from any angle. Shadows still use full walls. Set `display.walls` to `"half"` (default) or `"full"` and `display.wall_cut` (metres, default 1.2); The ⋯ menu switches it. Roofs hide in the house view and show in the roof view. |
 | **Languages** | English and European Portuguese (`?lang=pt` / `?lang=en`). |
 
 ![Editor with an AI-drafted plan](docs/screenshot-editor.jpg)
 
-## First-run wizard
+## Setup guide
 
-1. **Hosting:** claim the house with a one-time setup code and choose a password.
-2. **Keys** (all optional): OpenRouter, Home Assistant URL and token. Stored as platform secrets, never in the repo or the profile.
+New houses start with a step-by-step guide. The house builds itself in 3D next to each step (the footprint, walls rising, the roof, then the layers), so you see progress as you go. Progress is saved in the browser: close it and pick up where you left off. Optional steps have **Do this later**, and the step list lets you jump back to anything.
+
+**Connect**
+1. **Hosting:** where the app runs (Cloudflare Workers, free; or Docker on a Raspberry Pi or NAS), with the deploy commands, then claim the house with the one-time setup code and a password.
+2. **Keys** (optional): OpenRouter, Home Assistant URL and token, and where to get each. Stored as platform secrets, never in the repo or the profile.
+
+**The house**
 3. **Location:** search or tap the map (OpenStreetMap) to pin the house; time zone.
-4. **Floor plans:** upload a PNG or JPG per floor, mark a known distance to set the scale, then either
+4. **Floor plans:** upload a PNG, JPG or PDF per floor, mark a known distance to set the scale, then either
    - **Draft with AI:** a vision model on OpenRouter traces walls, rooms, doors and windows; you correct the draft in the editor, or
    - **Draw by hand** in the editor over the image, or start from a plain rectangle.
-5. **North:** rotate the arrow to match the plan's north.
-6. **Aerial view** (optional): upload your own north-up image, or show Esri World Imagery live (never stored). Google imagery is not supported: its terms don't allow storing it.
-7. **Roof and terrain.**
-8. **Modules:** turn on plants, Wi-Fi, Home Assistant, solar and cameras.
-9. **Review and save.**
+5. **Rooms:** names, types and ceiling heights.
+6. **North:** rotate the arrow to match the plan's north.
+7. **Aerial view** (optional): your own north-up image, or Esri World Imagery live (never stored). Google imagery is not supported: its terms don't allow storing it.
+8. **Walls:** half height (recommended) or full, and where the cut sits.
+9. **Roof and terrain.**
 
-Everything can be changed later from the **Edit** button (2D editor) or the **⋯** menu (wizard).
+**Layers** (each optional): plants, Wi-Fi, Home Assistant devices, solar panels, cameras; each says what it needs and what comes next.
+
+**Finish:** review and save. The house then lights up one layer at a time and you land in the app.
+
+Everything can be changed later from the **Edit** button (2D editor) or the **⋯** menu (setup guide).
 
 ## Privacy
 
@@ -135,7 +146,7 @@ See `web/demo/profile.json` for a complete example and `web/profile/profile.js` 
   - `engine/`: procedural 3D (`build3d.js`), sun position and irradiance (`sun.js`), sun exposure by ray casting (`exposure.js`), viewer.
   - `modules/`: one file per module (sun, plants, wifi, homeassistant, solar, cameras, furniture). Each exports a panel, 3D overlays and editor items.
   - `vendor/pdfjs/`: pdf.js 4.10 (Apache-2.0) to render PDF plans in the browser.
-  - `editor/`: the 2D editor. `wizard/`: the first-run wizard.
+  - `editor/`: the 2D editor. `wizard/`: the setup guide (`wizard.js`) and its live 3D preview (`preview.js`).
 - `server/`: one API (`core.js`) shared by the Cloudflare Worker (`worker.js`, KV storage) and the Node server (`node.js`, file storage).
   - Auth: PBKDF2 password hash, HMAC-signed HttpOnly SameSite=Strict session cookie, login rate limit, same-origin check on writes.
   - The Home Assistant proxy only allows a short list of services (lights, switches, fans, scenes, scripts, media, climate on/off, covers with an explicit confirmation, automations on/off/run). Automations it writes are limited to a simple, validated subset and it refuses to change automations made in HA itself.
@@ -172,7 +183,7 @@ Your real house profile should not live in a public fork: keep it in your deploy
 
 ## Em português
 
-O house twin é um gémeo digital da sua casa, para fazer fork e alojar por sua conta: grátis no Cloudflare Workers ou em Docker num Raspberry Pi. A partir das plantas em 2D (imagem ou PDF, desenhadas à mão ou com rascunho por IA) gera a casa em 3D, mostra o sol direto em cada divisão ao longo do dia e junta plantas, Wi-Fi, Home Assistant, painéis solares e câmaras. Os dados ficam no seu armazenamento, sem telemetria. A interface está em português europeu (`?lang=pt`). As instruções de instalação acima aplicam-se tal e qual.
+O house twin é um gémeo digital da sua casa, para fazer fork e alojar por sua conta: grátis no Cloudflare Workers ou em Docker num Raspberry Pi. A partir das plantas em 2D (imagem ou PDF, desenhadas à mão ou com rascunho por IA) gera a casa em 3D, mostra o sol direto em cada divisão ao longo do dia e junta plantas, Wi-Fi, Home Assistant, painéis solares e câmaras. Tudo fica numa só vista 3D, com camadas que pode mostrar ou ocultar e um painel de detalhes que abre quando precisa; as paredes ficam a meia altura para se ver o interior. Um guia passo a passo ajuda a configurar a casa e pode ser retomado mais tarde. Os dados ficam no seu armazenamento, sem telemetria. A interface está em português europeu (`?lang=pt`). As instruções de instalação acima aplicam-se tal e qual.
 
 ## Licence
 

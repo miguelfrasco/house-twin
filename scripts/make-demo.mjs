@@ -78,6 +78,7 @@ const profile = {
     { id: "r2", floor: "f0", type: "flat", overhang: 0.2, outline: [[12, 3], [17, 3], [17, 9], [12, 9]] },
   ],
   assets: [{ id: "aerial", kind: "aerial", path: "/demo/aerial.svg", mime: "image/svg+xml" }],
+  display: { walls: "half", wall_cut: 1.2 }, // lower half of every wall solid, glass above: you can see into the rooms
   modules: {
     plants: {
       enabled: true,

@@ -219,6 +219,7 @@ async function pickEntity(ctx) {
 export default {
   id: "homeassistant",
   icon: "🏠",
+  isPlacing: () => !!placing,
   async activate(ctx) { autos = null; await fetchStates(ctx); draw(ctx); loadAutos(ctx).then(() => ctx.state.module === "homeassistant" && ctx.refreshPanel()); },
   deactivate(ctx) { ctx.viewer.clearMarkers("ha"); ctx.viewer.removeLabels("ha"); placing = null; ctx.hint(null); },
   async onPick(ctx, pick) {

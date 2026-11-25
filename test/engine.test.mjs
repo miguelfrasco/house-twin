@@ -52,3 +52,27 @@ test("site: sloped paving follows vertex_y; cut:false keeps the lawn whole", asy
   assert.ok(Math.abs(Math.min(...ys) + 1) < 0.02 && Math.abs(Math.max(...ys)) < 0.02);
   assert.equal(groundHoles(prof).length, 0); assert.equal(occluders.length, 4); assert.equal(group.children.length, 5);
 });
+
+test("half-height walls: solid below the cut, glass above, and the sun still sees full walls", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { buildHouse, wallDisplay } = await import("../web/engine/build3d.js");
+  const demo = JSON.parse(readFileSync(new URL("../web/demo/profile.json", import.meta.url)));
+  assert.deepEqual(wallDisplay(demo), { mode: "half", cut: 1.2 });
+  assert.deepEqual(wallDisplay({}), { mode: "half", cut: 1.2 }, "half is the default");
+  const half = buildHouse(demo);
+  const walls = [], ghosts = [];
+  half.root.traverse((o) => { if (o.isMesh && o.userData.kind === "wall") (o.userData.ghost ? ghosts : walls).push(o); });
+  assert.ok(ghosts.length > 10, "upper parts become glass");
+  const box = new THREE.Box3();
+  half.root.updateMatrixWorld(true);
+  for (const m of walls) {
+    box.setFromObject(m);
+    const f = demo.floors.find((x) => x.id === m.userData.floorId);
+    assert.ok(box.max.y <= f.elevation + 1.2 + 1e-3, "solid parts stop at the cut");
+  }
+  for (const g of ghosts) assert.ok(half.occluders.includes(g), "glass tops still block the sun");
+  const full = buildHouse({ ...demo, display: { walls: "full" } });
+  let fullGhosts = 0;
+  full.root.traverse((o) => { if (o.userData?.ghost) fullGhosts++; });
+  assert.equal(fullGhosts, 0);
+});

@@ -1045,6 +1045,10 @@
       "mime": "image/svg+xml"
     }
   ],
+  "display": {
+    "walls": "half",
+    "wall_cut": 1.2
+  },
   "modules": {
     "plants": {
       "enabled": true,

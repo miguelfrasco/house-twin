@@ -44,6 +44,7 @@ function draw(ctx) {
   for (const f of ctx.profile.floors) {
     const cells = computeFloor(ctx, f);
     grid.set(f.id, cells);
+    if (ctx.surface !== "wifi") continue; // the sun map has the floors; markers still show
     const m = cellMesh(cells, 0.5, f.elevation + 0.05, (c) => rssiColor(c.rssi), 0.72);
     m.userData.overlay = "wifi"; m.userData.floorId = f.id;
     v.overlays.add(m);
@@ -62,7 +63,9 @@ let placing = null;
 export default {
   id: "wifi",
   icon: "📶",
-  activate(ctx) { if (!ctx.state.floor) ctx.setFloor([...ctx.profile.floors].sort((a, b) => Math.abs(a.elevation) - Math.abs(b.elevation))[0].id); draw(ctx); },
+  activate(ctx) { draw(ctx); },
+  onLayers(ctx) { draw(ctx); },
+  isPlacing: () => !!placing,
   deactivate(ctx) { const v = ctx.viewer; v.clearOverlays("wifi"); v.clearMarkers("ap"); v.clearMarkers("survey"); v.removeLabels("ap"); placing = null; ctx.hint(null); },
   async onPick(ctx, pick) {
     if (!placing || !pick.pos) return;

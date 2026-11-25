@@ -220,6 +220,7 @@ function addPlantSheet(ctx) {
 export default {
   id: "plants",
   icon: "🪴",
+  isPlacing: () => !!placing,
   async activate(ctx) {
     const st = await ctx.api.getState("plants");
     waterings = st.waterings || {};

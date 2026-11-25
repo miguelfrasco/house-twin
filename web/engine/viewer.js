@@ -3,15 +3,19 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { buildHouse, buildGround, polygonCentroid } from "./build3d.js";
+import { buildHouse, buildGround, polygonCentroid, ghostMaterial, wallDisplay } from "./build3d.js";
 import { sunVector } from "./sun.js";
 import { buildSite, animateGates } from "./site.js";
 import { buildFurnitureGroup, applyModelOverrides } from "./furniture.js";
 
 export class Viewer {
-  constructor(canvas, labelsEl) {
+  /** opts.fit: "window" (default, full screen) or "element" (size to the canvas box, e.g. a preview). */
+  constructor(canvas, labelsEl, opts = {}) {
     this.canvas = canvas;
     this.labelsEl = labelsEl;
+    this.fit = opts.fit || "window";
+    this.view = "house"; // "house" (dollhouse when walls are cut) or "roof"
+    this.tick = []; // per-frame callbacks (animations)
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.renderer.shadowMap.enabled = true;
@@ -19,6 +23,7 @@ export class Viewer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    this.renderer.localClippingEnabled = true; // half-height walls on imported models
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x070b11);
     this.scene.fog = new THREE.Fog(0x070b11, 70, 160);
@@ -45,15 +50,18 @@ export class Viewer {
     this.raycaster = new THREE.Raycaster();
     this._resize = () => this.resize();
     window.addEventListener("resize", this._resize);
+    if (this.fit === "element" && window.ResizeObserver) { this._ro = new ResizeObserver(this._resize); this._ro.observe(canvas); }
     canvas.addEventListener("pointerdown", (e) => (this._down = [e.clientX, e.clientY]));
     canvas.addEventListener("pointerup", (e) => {
       if (!this._down || Math.hypot(e.clientX - this._down[0], e.clientY - this._down[1]) > 6) return;
-      this.pick(e.clientX, e.clientY);
+      const r = this.rect();
+      this.pick(e.clientX - r.left, e.clientY - r.top);
     });
     this.resize();
     const loop = () => {
       this._raf = requestAnimationFrame(loop);
       this.controls.update();
+      if (this.tick.length) { const t = performance.now(); this.tick = this.tick.filter((f) => f(t) !== false); }
       if (this.site?.gates.length) animateGates(this.site.gates);
       this.renderer.render(this.scene, this.camera);
       this.updateLabels();
@@ -61,10 +69,19 @@ export class Viewer {
     loop();
   }
 
+  rect() {
+    if (this.fit !== "element") return { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    const r = this.canvas.getBoundingClientRect();
+    return { left: r.left, top: r.top, width: Math.max(1, this.canvas.clientWidth), height: Math.max(1, this.canvas.clientHeight) };
+  }
+
   resize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const { width: w, height: h } = this.rect();
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
+    // keep the subject centred in the part of the canvas that isn't covered (e.g. by the setup guide's card)
+    const s = this.shiftX?.() || 0;
+    if (s) this.camera.setViewOffset(w, h, -s / 2, 0, w, h); else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
   }
 
@@ -108,6 +125,7 @@ export class Viewer {
         this.house.floors.get(f.id).structure.add(m);
         this.house.floors.get(f.id).model = m;
         if (f.model.crop) cropModel(m, f.model.crop, f.elevation);
+        if (this.house.display.mode === "half") cutModel(m, f.elevation, this.house.display.cut);
         m.userData.modelRoot = true;
         applyModelOverrides(m, profile.modules?.furniture?.overrides);
       } catch (e) { console.warn("model failed", e); }
@@ -135,7 +153,7 @@ export class Viewer {
   }
 
   /** Focus one floor: hide everything above it (cutaway). null = whole house. */
-  setFocus(floorId) { this.focusFloor = floorId; this.applyFocus(); }
+  setFocus(floorId) { this.focusFloor = floorId; this.view = "house"; this.applyFocus(); }
 
   applyFocus() {
     if (!this.house) return;
@@ -149,9 +167,17 @@ export class Viewer {
       const f = fl.find((q) => q.id === g.userData.floorId);
       g.visible = showRoof || (f && f.elevation < maxElev - 1e-6);
     });
+    // half-height walls: roofs vanish in the house view (they still cast shadows) and come back in the roof view
+    const roofSolid = this.house.display?.mode !== "half" || this.view === "roof";
+    this.house.roofs.traverse((o) => {
+      if (!o.isMesh) return;
+      if (!o.userData.solidMat) o.userData.solidMat = o.material;
+      o.material = roofSolid ? o.userData.solidMat : CASTER;
+    });
     this.house.pv.visible = showRoof && this.pvVisible !== false;
-    for (const l of this.labels) l.hidden = !!(l.floorId && this.floorHidden(l.floorId)) || (!this.focusFloor && l.el.classList.contains("room"));
-    this.markers.children.forEach((m) => (m.visible = !m.userData.floorId || !this.floorHidden(m.userData.floorId)));
+    const roofView = this.view === "roof"; // looking at the roof: things inside the house would float on it
+    for (const l of this.labels) l.hidden = !!(l.floorId && this.floorHidden(l.floorId)) || (!this.focusFloor && l.el.classList.contains("room")) || (roofView && !!l.floorId);
+    this.markers.children.forEach((m) => (m.visible = (!m.userData.floorId || !this.floorHidden(m.userData.floorId)) && !(roofView && m.userData.floorId)));
     this.overlays.children.forEach((m) => (m.visible = !m.userData.floorId || !this.floorHidden(m.userData.floorId)));
   }
 
@@ -204,7 +230,7 @@ export class Viewer {
   clearLabels() { this.labels.forEach((l) => l.el.remove()); this.labels = []; }
 
   updateLabels() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const { width: w, height: h } = this.rect();
     const v = new THREE.Vector3();
     for (const l of this.labels) {
       if (l.hidden || l.off) { l.el.style.display = "none"; continue; }
@@ -219,7 +245,8 @@ export class Viewer {
   /** Raycast a click; reports floor/room and plan coordinates. */
   pick(cx, cy) {
     if (!this.onPick || !this.house) return;
-    const ndc = new THREE.Vector2((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
+    const R = this.rect();
+    const ndc = new THREE.Vector2((cx / R.width) * 2 - 1, -(cy / R.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
     const markers = this.raycaster.intersectObjects(this.markers.children.filter((m) => m.visible), true);
     if (markers.length) {
@@ -230,7 +257,7 @@ export class Viewer {
     if (this.pickModel) { // furniture editing: report the model node under the cursor
       const objs = [];
       for (const [id, x] of this.house.floors) if (x.group.visible && !this.floorHidden(id)) objs.push(x.structure, ...x.group.children.filter((c) => c.userData.furnitureId));
-      const h = this.raycaster.intersectObjects(objs, true).find((q) => q.object.visible);
+      const h = this.raycaster.intersectObjects(objs, true).find((q) => q.object.visible && !q.object.userData.ghost && !q.object.isLineSegments);
       if (h && this.pickModel(h)) return;
     }
     const targets = [];
@@ -284,6 +311,7 @@ export class Viewer {
   /** Look down at the roofs (solar layout); shows every floor and roof. */
   roofView() {
     this.setFocus(null);
+    this.view = "roof"; this.applyFocus();
     const b = this.house.bounds, span = Math.max(b.w, b.h, 8);
     const top = Math.max(...this.profile.floors.map((f) => f.elevation + f.height));
     this.controls.target.set(b.cx, top, b.cy);
@@ -300,6 +328,57 @@ export class Viewer {
   }
 
   snapshot() { return this.renderer.domElement.toDataURL("image/png"); }
+
+  /** Run fn(progress 0..1) over ms with an ease; resolves when done. Instant when ms is 0. */
+  animate(ms, fn, ease = easeOut) {
+    return new Promise((res) => {
+      if (!ms) { fn(1); return res(); }
+      const t0 = performance.now();
+      this.tick.push((t) => { const k = Math.min(1, (t - t0) / ms); fn(ease(k)); if (k >= 1) { res(); return false; } });
+    });
+  }
+
+  dispose() {
+    cancelAnimationFrame(this._raf);
+    window.removeEventListener("resize", this._resize);
+    this._ro?.disconnect();
+    this.controls.dispose();
+    this.clearLabels();
+    this.renderer.dispose();
+  }
+}
+
+// cubic-bezier(0.23, 1, 0.32, 1) is close to an ease-out-quint
+export const easeOut = (t) => 1 - Math.pow(1 - t, 5);
+export const easeInOut = (t) => (t < 0.5 ? 16 * t ** 5 : 1 - Math.pow(-2 * t + 2, 5) / 2);
+
+// invisible, still casts shadows (roofs in the cut-away view)
+const CASTER = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, side: THREE.DoubleSide });
+
+/** Half-height walls on an imported model: clip everything at the cut, add a faint glass copy above it.
+ *  Shadows are not clipped, so the sun still sees full walls. */
+export function cutModel(root, elevation, cut) {
+  root.updateMatrixWorld(true);
+  const y = elevation + cut;
+  const below = new THREE.Plane(new THREE.Vector3(0, -1, 0), y);
+  const above = new THREE.Plane(new THREE.Vector3(0, 1, 0), -y);
+  const ghost = ghostMaterial(); ghost.clippingPlanes = [above];
+  const edge = new THREE.LineBasicMaterial({ color: 0x5ce1ff, transparent: true, opacity: 0.3, depthWrite: false, clippingPlanes: [above] });
+  const box = new THREE.Box3(), meshes = [];
+  root.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
+  for (const o of meshes) {
+    box.setFromObject(o);
+    if (box.max.y <= y + 0.02) continue;
+    const mats = [].concat(o.material).map((m) => { const c = m.clone(); c.clippingPlanes = [below]; c.clipShadows = false; c.side = THREE.DoubleSide; return c; });
+    o.material = Array.isArray(o.material) ? mats : mats[0];
+    if (box.max.y - box.min.y > 1.6 && box.min.y < y) {
+      const g = new THREE.Mesh(o.geometry, ghost);
+      g.userData.ghost = true; g.raycast = () => {};
+      g.add(new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry, 40), edge));
+      g.children[0].raycast = () => {};
+      o.add(g);
+    }
+  }
 }
 
 /** Hide model meshes that reach outside crop {x0, y0, x1, y1} (plan metres) or below min_h (metres from the floor):

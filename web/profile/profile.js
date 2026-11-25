@@ -31,6 +31,7 @@ export function emptyProfile(name = "My house") {
     roofs: [],
     assets: [],
     modules: {},
+    display: { walls: "half", wall_cut: 1.2 },
   };
 }
 
@@ -141,6 +142,13 @@ export function validate(profile) {
     assetIds.add(a.id);
     if (!["plan", "aerial", "photo", "model"].includes(a.kind)) err(`assets[${i}].kind`, "plan | aerial | photo | model");
   });
+  if (p.display != null) {
+    if (typeof p.display !== "object") err("display", "object");
+    else {
+      if (p.display.walls != null && !["half", "full"].includes(p.display.walls)) err("display.walls", "half | full");
+      if (p.display.wall_cut != null && !(typeof p.display.wall_cut === "number" && p.display.wall_cut >= 0.6 && p.display.wall_cut <= 2.4)) err("display.wall_cut", "metres between 0.6 and 2.4");
+    }
+  }
   if (p.site?.aerial?.source === "google") err("site.aerial.source", "Google imagery cannot be stored; upload your own image or use esri");
   for (const k of Object.keys(p.modules || {})) if (!MODULE_IDS.includes(k)) err(`modules.${k}`, "unknown module");
   (p.modules?.furniture?.items || []).forEach((it, i) => {
