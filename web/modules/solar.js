@@ -1,6 +1,7 @@
-// Solar: panels drawn on the roof and a clear-sky production estimate (no weather, no account).
+// Solar: panels drawn on the roof and a clear-sky production estimate; optional Open-Meteo cloud forecast.
 import { dailyPV, sunPosition, poaIrradiance } from "../engine/sun.js";
 import { getLang, fmtNum } from "../i18n.js";
+import { weatherEnabled, setWeather, cloudCover, cloudFactor } from "../engine/weather.js";
 
 function yearly(arr, L, tz, year) {
   let kwh = 0;
@@ -49,6 +50,24 @@ export default {
       <div class="stat big"><span>${fmtNum(year / 1000, 1)}</span><label>MWh</label></div>
       <div class="chart">${months.map((v) => `<i style="height:${(v / mm) * 100}%"></i>`).join("")}</div><div class="chart-x"><span>${pt ? "jan" : "Jan"}</span><span>${pt ? "jul" : "Jul"}</span><span>${pt ? "dez" : "Dec"}</span></div>
       <div class="list" style="margin-top:12px">${arrays.map((a) => `<div class="card"><div class="ic">🔆</div><div class="bd"><b>${esc(a.array.label || a.array.id)}</b><small>${fmtNum(a.array.kwp, 1)} ${esc(t("kwp"))} · ${a.placed} ${esc(t("panels"))} · ${esc(t("tilt"))} ${fmtNum(a.tilt, 0)}° · ${esc(t("facing"))} ${dirName(a.azimuth)} (${fmtNum(a.azimuth, 0)}°)</small></div></div>`).join("")}</div>
-      <div class="note">${pt ? "Estimativa com céu limpo e perdas fixas. Não usa dados meteorológicos nem contas externas." : "Clear-sky estimate with fixed losses. No weather data or external accounts."}</div>`;
+      <div id="pvWx"></div>`;
+    this.weather(ctx, el.querySelector("#pvWx"), hourly, day, pt);
+  },
+  async weather(ctx, box, hourly, day, pt) {
+    const on = weatherEnabled();
+    const toggle = `<button class="chip small" id="wxT">${on ? (pt ? "Desligar previsão" : "Turn forecast off") : (pt ? "Usar previsão do tempo" : "Use weather forecast")}</button>`;
+    const base = pt ? "Estimativa com céu limpo e perdas fixas." : "Clear-sky estimate with fixed losses.";
+    const priv = pt ? "A previsão vem da Open-Meteo e só recebe coordenadas arredondadas (~1 km)." : "The forecast comes from Open-Meteo and only gets rounded coordinates (~1 km).";
+    const bind = () => (box.querySelector("#wxT").onclick = () => { setWeather(!on); ctx.refreshPanel(); });
+    if (!on) { box.innerHTML = `<div class="note">${base} ${priv}</div><div class="row">${toggle}</div>`; return bind(); }
+    box.innerHTML = `<div class="note">${pt ? "A carregar a previsão…" : "Loading the forecast…"}</div>`;
+    const wx = await cloudCover(ctx.profile.location, ctx.state.date, ctx.tz);
+    if (!box.isConnected) return;
+    if (!wx || !wx.cloud.length) { box.innerHTML = `<div class="note">${base} ${pt ? "Sem previsão para este dia." : "No forecast for this day."}</div><div class="row">${toggle}</div>`; return bind(); }
+    const adj = hourly.reduce((s, v, i) => s + v * cloudFactor(wx.cloud[i] ?? 0), 0);
+    const avg = wx.cloud.reduce((a, b) => a + b, 0) / wx.cloud.length;
+    box.innerHTML = `<div class="card" style="margin-top:12px"><div class="ic">${avg > 0.7 ? "☁" : avg > 0.3 ? "⛅" : "☀"}</div><div class="bd"><b>${fmtNum(adj, 1)} kWh ${pt ? "com a previsão" : "with the forecast"}</b><small>${pt ? "Nebulosidade média" : "Average cloud cover"} ${fmtNum(avg * 100, 0)}% · ${fmtNum(wx.tmin, 0)}–${fmtNum(wx.tmax, 0)} °C${wx.rain ? ` · ${fmtNum(wx.rain, 1)} mm` : ""} · ${fmtNum(day ? (adj / day) * 100 : 0, 0)}% ${pt ? "do céu limpo" : "of clear sky"}</small></div></div>
+      <div class="note">${priv}</div><div class="row">${toggle}</div>`;
+    bind();
   },
 };
