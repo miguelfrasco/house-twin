@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit tests
+        run: node --test test/*.test.mjs
+      - name: Privacy guard (secrets + private denylist)
+        env:
+          # Repository secret, one string per line. Never commit the list itself.
+          HT_DENYLIST: ${{ secrets.HT_DENYLIST }}
+        run: node scripts/privacy-guard.mjs
+      - name: Gitleaks (full history)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

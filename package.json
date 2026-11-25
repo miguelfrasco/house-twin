@@ -1,0 +1,20 @@
+{
+  "name": "house-twin",
+  "version": "0.1.0",
+  "description": "A forkable digital twin of your home: 3D from 2D plans, sun exposure, plants, Wi-Fi, Home Assistant, solar and cameras.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/node.js",
+    "demo": "DEMO=1 node server/node.js",
+    "test": "node --test test/*.test.mjs",
+    "guard": "node scripts/privacy-guard.mjs",
+    "headers": "node scripts/gen-headers.mjs",
+    "demo:profile": "node scripts/make-demo.mjs",
+    "cf:dev": "npx wrangler@4 dev",
+    "cf:deploy": "npx wrangler@4 deploy",
+    "cf:deploy:demo": "npx wrangler@4 deploy -c wrangler.demo.jsonc"
+  }
+}

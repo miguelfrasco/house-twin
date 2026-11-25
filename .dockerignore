@@ -1,0 +1,8 @@
+.git
+data
+node_modules
+test
+scripts
+.github
+*.md
+!web/**/*.md

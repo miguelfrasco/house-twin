@@ -1,0 +1,4 @@
+#!/bin/sh
+# Enable with: git config core.hooksPath .githooks
+# Point HT_DENYLIST_FILE at a private file OUTSIDE the repo (one string per line).
+exec node scripts/privacy-guard.mjs --staged

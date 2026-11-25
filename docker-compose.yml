@@ -1,0 +1,15 @@
+services:
+  house-twin:
+    build: .
+    image: house-twin:local
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/data   # profile, images, password hash and secrets.env live here (back it up)
+    environment:
+      # Optional. Keys can also be added from the setup wizard (written to /data/secrets.env, mode 600).
+      # OPENROUTER_API_KEY: ""
+      # HA_BASE_URL: "http://homeassistant.local:8123"
+      # HA_TOKEN: ""
+      AI_MODEL: "google/gemini-2.5-flash"

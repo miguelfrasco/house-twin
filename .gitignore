@@ -1,0 +1,14 @@
+node_modules/
+data/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+secrets.env
+setup-code.txt
+*.profile.json
+profiles/
+private/
+*.log
+.DS_Store

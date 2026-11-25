@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>House twin</title>
+<meta name="theme-color" content="#06090d">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/app.css">
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/vendor/addons/"}}</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="labels"></div>
+<header class="glass topbar">
+  <div class="brand"><span class="logo">⌂</span><div><b id="houseName">House twin</b><small id="houseSub"></small></div></div>
+  <nav class="modules" id="modTabs"></nav>
+  <div class="tb-right">
+    <button id="langBtn" class="chip" aria-label="Language">PT</button>
+    <button id="editBtn" class="chip">✎ <span data-t="edit">Edit</span></button>
+    <button id="menuBtn" class="chip" aria-label="Menu">⋯</button>
+  </div>
+</header>
+<div id="menu" class="glass menu hidden"></div>
+<aside class="glass panel left" id="panel"></aside>
+<div class="glass floorbar" id="floorBar"></div>
+<div class="glass timebar" id="timeBar">
+  <input type="date" id="dateIn" aria-label="Date">
+  <input type="range" id="timeIn" min="0" max="1439" step="5" aria-label="Time of day">
+  <span id="timeLbl" class="tlbl">12:00</span>
+  <button id="nowBtn" class="chip small" data-t="now">Now</button>
+</div>
+<div id="toast" class="glass toast hidden"></div>
+<div id="hint" class="glass hint hidden"></div>
+<div id="sheet" class="glass sheet hidden"></div>
+<div id="overlayRoot"></div>
+<div class="loading" id="loading"><div class="spinner"></div><span data-t="loading">Loading the house…</span></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
