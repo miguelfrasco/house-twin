@@ -90,7 +90,7 @@ let placing = null;
 export default {
   id: "wifi",
   icon: "📶",
-  activate(ctx) { if (!ctx.state.floor) ctx.setFloor(ctx.profile.floors[0].id); draw(ctx); },
+  activate(ctx) { if (!ctx.state.floor) ctx.setFloor([...ctx.profile.floors].sort((a, b) => Math.abs(a.elevation) - Math.abs(b.elevation))[0].id); draw(ctx); },
   deactivate(ctx) { const v = ctx.viewer; v.clearOverlays("wifi"); v.clearMarkers("ap"); v.clearMarkers("survey"); v.removeLabels("ap"); placing = null; ctx.hint(null); },
   async onPick(ctx, pick) {
     if (!placing || !pick.pos) return;

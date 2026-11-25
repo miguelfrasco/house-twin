@@ -248,7 +248,7 @@ export function buildHouse(profile, opts = {}) {
       m.receiveShadow = true;
       m.userData = { kind: "room", roomId: r.id, floorId: f.id };
       g.add(m); roomMeshes.push(m);
-      allPts.push(...r.polygon);
+      if (!r.outdoor && r.type !== "outdoor") allPts.push(...r.polygon);
     }
     if (!f.model) {
       const extIds = new Set(f.walls.filter((w) => (w.thickness ?? 0.2) >= 0.2).map((w) => w.id));

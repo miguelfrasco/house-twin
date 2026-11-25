@@ -7,7 +7,7 @@ const im = html.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1];
 const hash = createHash("sha256").update(im).digest("base64");
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'sha256-${hash}'`,
+  `script-src 'self' 'wasm-unsafe-eval' 'sha256-${hash}'`, // wasm: meshopt decoder for compressed GLB models
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com",
   "connect-src 'self' data: blob: https://nominatim.openstreetmap.org https://openrouter.ai https://api.open-meteo.com",

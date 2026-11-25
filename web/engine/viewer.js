@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { buildHouse, buildGround, polygonCentroid } from "./build3d.js";
 import { sunVector } from "./sun.js";
 
@@ -76,7 +77,7 @@ export class Viewer {
     this.ground = buildGround(profile, this.house.bounds, asset ? assetUrl(asset) : null);
     this.scene.add(this.ground);
     // custom models per floor (e.g. a GLB exported from a CAD tool)
-    const loader = new GLTFLoader();
+    const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
     for (const f of profile.floors) {
       if (!f.model?.asset) continue;
       const a = (profile.assets || []).find((x) => x.id === f.model.asset);
@@ -130,6 +131,7 @@ export class Viewer {
     const maxElev = fl[idx]?.elevation ?? Infinity;
     for (const [id, x] of this.house.floors) x.group.visible = x.floor.elevation <= maxElev + 1e-6 || id === this.focusFloor;
     const showRoof = !this.focusFloor;
+    if (this.ground) this.ground.visible = !(this.focusFloor && maxElev < -0.5); // looking at a basement: lift the lawn away
     this.house.roofs.children.forEach((g) => {
       const f = fl.find((q) => q.id === g.userData.floorId);
       g.visible = showRoof || (f && f.elevation < maxElev - 1e-6);
