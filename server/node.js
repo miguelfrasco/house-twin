@@ -1,6 +1,7 @@
 // Node target (Docker on a Raspberry Pi or any small server). Zero dependencies.
 // Data and secrets live in DATA_DIR (a mounted volume). Serves web/ as static files.
 import { createServer } from "node:http";
+import { dailyReminder } from "./care.js";
 import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { join, extname, normalize, dirname } from "node:path";
@@ -91,4 +92,5 @@ const server = createServer(async (req, res) => {
 });
 
 await ensureSetupCode();
+if (env.DEMO !== "1") setInterval(() => dailyReminder(storage, env).catch((e) => console.error("reminder", e.message)), 10 * 60_000).unref();
 server.listen(PORT, () => console.log(`House twin on http://localhost:${PORT} (${env.DEMO === "1" ? "demo" : "owner"} mode, data in ${DATA})`));

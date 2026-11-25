@@ -2,6 +2,7 @@
 import { migrate, validate } from "../web/profile/profile.js";
 import { hashPassword, verifyPassword, makeSession, checkSession, cookie, readCookie, randomToken, timingSafeEqual } from "./auth.js";
 import { draftPlan } from "./ai.js";
+import { handleCare } from "./care.js";
 
 export const SECRET_NAMES = ["OPENROUTER_API_KEY", "HA_BASE_URL", "HA_TOKEN"];
 const MAX_PROFILE = 2_000_000, MAX_ASSET = 8_000_000, MAX_STATE = 200_000;
@@ -152,6 +153,8 @@ export async function handleApi(req, env, deps) {
     await deps.writeSecret(body.name, String(body.value || "").trim());
     return json({ ok: true });
   }
+
+  if (path.startsWith("/api/plants/") || path.startsWith("/api/push/")) { const r = await handleCare(req, env, path, url, storage); if (r) return r; }
 
   if (path.startsWith("/api/ha/")) return haProxy(req, env, path, url);
 

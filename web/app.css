@@ -109,3 +109,5 @@ pre.cmd{background:rgba(0,0,0,.4);border:1px solid var(--line);border-radius:12p
   .ed-tools{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;align-items:center;padding:8px;scrollbar-width:none}
   .ed-tools>*{flex:none}.ed-tools button{white-space:nowrap}.ed-tools .f,.ed-tools .note,.ed-tools input[type=range]{display:none}
 }
+.thumbs{display:flex;gap:6px;margin:10px 0;overflow-x:auto}.thumbs img{width:64px;height:64px;object-fit:cover;border-radius:12px;border:1px solid var(--line);flex:none}
+.loglist{display:flex;flex-wrap:wrap;gap:6px}.loglist span{font-size:12px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}

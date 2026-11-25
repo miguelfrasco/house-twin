@@ -9,5 +9,6 @@
   "assets": { "directory": "./web", "binding": "ASSETS", "run_worker_first": ["/api/*"], "not_found_handling": "single-page-application" },
   "kv_namespaces": [{ "binding": "TWIN", "id": "REPLACE_WITH_YOUR_KV_NAMESPACE_ID" }],
   "vars": { "AI_MODEL": "google/gemini-2.5-flash" },
+  "triggers": { "crons": ["7 * * * *"] }, // hourly check; the plant reminder goes out once a day
   "observability": { "enabled": false }
 }

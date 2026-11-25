@@ -1,6 +1,7 @@
 // Cloudflare Workers target. Static files come from the ASSETS binding; data lives in KV.
 import { handleApi, SECURITY_HEADERS } from "./core.js";
 import { kvStorage } from "./storage-kv.js";
+import { dailyReminder } from "./care.js";
 
 const memory = () => { const m = new Map(); return { get: async (k, t) => { const v = m.get(k); return v == null ? null : t === "json" ? JSON.parse(v) : v; }, put: async (k, v) => void m.set(k, v), delete: async (k) => void m.delete(k) }; };
 
@@ -19,5 +20,10 @@ export default {
       return res;
     }
     return env.ASSETS.fetch(req);
+  },
+  // hourly cron (wrangler.jsonc "triggers"): sends the plant reminder once a day at the owner's hour
+  async scheduled(_event, env, ctx) {
+    if (!env.TWIN || env.DEMO === "1") return;
+    ctx.waitUntil(dailyReminder(kvStorage(env.TWIN), env));
   },
 };
