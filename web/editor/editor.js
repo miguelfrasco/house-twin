@@ -58,12 +58,12 @@ export function openEditor(ctx, opts = {}) {
     ["window", "🪟", L("Janela", "Window")],
     ["garage", "⛩", L("Portão", "Garage door")],
     ["delete", "🗑", L("Apagar", "Delete")],
-    ["calibrate", "📏", L("Escala da planta", "Plan scale")],
+    ["calibrate", "📏", L("Escala da planta do piso", "Floor plan scale")],
   ];
   function renderTools() {
     const el = $("#edTools");
     el.innerHTML = `<div class="kicker">${L("Ferramentas", "Tools")}</div>` + TOOLS.map(([id, ic, label]) => `<button class="chip tool${tool === id ? " on" : ""}" data-tool="${id}">${ic} ${esc(label)}</button>`).join("") +
-      `<div class="kicker">${L("Planta", "Plan image")}</div>
+      `<div class="kicker">${L("Planta do piso", "Floor plan")}</div>
        <label class="chip" style="text-align:center;cursor:pointer">⬆ ${L("Carregar imagem ou PDF", "Upload image or PDF")}<input type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" id="edPlanFile" hidden></label>
        ${floor().plan ? `<label class="f">${L("Opacidade", "Opacity")}</label><input type="range" min="0" max="1" step="0.05" value="${floor().plan.opacity ?? 0.6}" id="edPlanOp">` : ""}
        <div class="note">${hintFor(tool)}</div>`;
@@ -71,7 +71,7 @@ export function openEditor(ctx, opts = {}) {
     el.querySelector("#edPlanFile").onchange = async (e) => {
       const f = e.target.files[0]; if (!f) return;
       let img;
-      try { img = await cleanImage(f, 3000, "image/jpeg", { pickPage: (n) => +prompt(L(`O PDF tem ${n} páginas. Qual tem a planta?`, `The PDF has ${n} pages. Which one has the plan?`), "1") }); } catch (err) { return ctx.toast(L("Não consegui ler o ficheiro: ", "Could not read the file: ") + err.message); }
+      try { img = await cleanImage(f, 3000, "image/jpeg", { pickPage: (n) => +prompt(L(`O PDF tem ${n} páginas. Qual tem a planta do piso?`, `The PDF has ${n} pages. Which one has the floor plan?`), "1") }); } catch (err) { return ctx.toast(L("Não consegui ler o ficheiro: ", "Could not read the file: ") + err.message); }
       const id = `plan-${floorId}`;
       const stored = await ctx.api.putAsset(id, img.dataUrl, img.mime);
       draft.assets = (draft.assets || []).filter((a) => a.id !== id);
@@ -79,7 +79,7 @@ export function openEditor(ctx, opts = {}) {
       const sc = img.pdf ? pdfScale(img) : null;
       floor().plan = { asset: id, origin: [0, 0], m_per_px: sc || 0.02, opacity: 0.6, width_px: img.width, height_px: img.height, _url: img.dataUrl };
       commit();
-      if (sc) { tool = "select"; renderTools(); fit(); draw(); ctx.toast(L("Escala aplicada. Confirme com uma medida conhecida (Escala da planta), se quiser.", "Scale applied. Check it against a known distance (Plan scale) if you like.")); return; }
+      if (sc) { tool = "select"; renderTools(); fit(); draw(); ctx.toast(L("Escala aplicada. Confirme com uma medida conhecida (Escala da planta do piso), se quiser.", "Scale applied. Check it against a known distance (Floor plan scale) if you like.")); return; }
       tool = "calibrate"; renderTools(); fit(); draw();
       ctx.toast(L("Agora marque dois pontos com uma medida conhecida.", "Now mark two points with a known distance."));
     };
@@ -94,7 +94,7 @@ export function openEditor(ctx, opts = {}) {
       window: L("Clique numa parede para pôr uma janela.", "Click a wall to add a window."),
       garage: L("Clique numa parede para pôr um portão.", "Click a wall to add a garage door."),
       delete: L("Clique num elemento para o apagar.", "Click an element to delete it."),
-      calibrate: L("Clique em dois pontos da planta e indique a distância real entre eles.", "Click two points on the plan and enter the real distance between them."),
+      calibrate: L("Clique em dois pontos da planta do piso e indique a distância real entre eles.", "Click two points on the floor plan and enter the real distance between them."),
     }[t];
   }
 
@@ -422,7 +422,7 @@ export function openEditor(ctx, opts = {}) {
       f.openings.push(o); sel = { type: "opening", id: o.id }; commit(); draw(); renderProps(); return;
     }
     if (tool === "calibrate") {
-      if (!f.plan) return ctx.toast(L("Carregue primeiro a imagem da planta", "Upload the plan image first"));
+      if (!f.plan) return ctx.toast(L("Carregue primeiro a planta do piso", "Upload the floor plan first"));
       calib = calib ? [...calib, p] : [p];
       if (calib.length === 2) {
         const d = Math.hypot(calib[1][0] - calib[0][0], calib[1][1] - calib[0][1]);
@@ -432,7 +432,7 @@ export function openEditor(ctx, opts = {}) {
           const o = f.plan.origin;
           f.plan.origin = [r2(calib[0][0] - (calib[0][0] - o[0]) * k), r2(calib[0][1] - (calib[0][1] - o[1]) * k)];
           f.plan.m_per_px *= k;
-          commit(); ctx.toast(L("Escala da planta atualizada", "Plan scale updated"));
+          commit(); ctx.toast(L("Escala da planta do piso atualizada", "Floor plan scale updated"));
           tool = "wall"; renderTools(); fit();
         }
         calib = null;

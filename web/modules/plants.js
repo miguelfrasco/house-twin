@@ -145,7 +145,7 @@ async function careSection(ctx, p, box) {
     ctx.toast(inp.dataset.mode === "photo" ? (pt ? "A guardar…" : "Saving…") : pt ? "A analisar a foto…" : "Analysing the photo…", 8000);
     try {
       const e = await care.addPhoto(ctx, p, f, inp.dataset.mode, lang);
-      if (e.analysis?.error) ctx.toast(e.analysis.error === "no_key" ? (pt ? "Introduza uma chave OpenRouter no assistente." : "Add an OpenRouter key in the wizard.") : e.analysis.error);
+      if (e.analysis?.error) ctx.toast(e.analysis.error === "no_key" ? (pt ? "Introduza uma chave OpenRouter no guia de configuração (passo Chaves)." : "Add an OpenRouter key in the setup guide (Keys step).") : e.analysis.error);
       else ctx.toast("✓");
     } catch (err) { ctx.toast(err.message); }
     careSection(ctx, p, box);

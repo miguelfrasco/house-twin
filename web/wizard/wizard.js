@@ -29,7 +29,7 @@ export function openWizard(ctx, opts = {}) {
     const s = JSON.parse(localStorage.getItem(KEY) || "null");
     if (s && !opts.fresh && opts.step == null && s.mode === cfg.mode && s.w) { w = migrate(s.w); status = s.status || {}; i = s.i || 0; resumed = i > 0; }
   } catch {}
-  if (!w.floors[0].walls.length && w.floors[0].name === "Ground floor") w.floors[0].name = L("Rés do chão", "Ground floor");
+  if (!w.floors[0].walls.length && w.floors[0].name === "Ground floor") w.floors[0].name = L("Rés-do-chão", "Ground floor");
   w.locale = getLang();
   w.display ||= { walls: "half", wall_cut: 1.2 };
   if (!w.location.timezone || w.location.timezone === "UTC") w.location.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -176,7 +176,7 @@ export function openWizard(ctx, opts = {}) {
     body.innerHTML = `<p class="lead">${L("A app é sua. Escolha onde a publica: o perfil da casa, as imagens e as chaves ficam sempre no seu armazenamento, sem servidor central nem telemetria.", "The app is yours. Choose where to run it: the house profile, images and keys always stay in your own storage, with no central server and no telemetry.")}</p>
       ${demo ? `<div class="note">${L("Está na demonstração pública. Pode fazer o guia todo: o resultado fica só neste browser. Para a sua casa, publique a sua própria cópia num dos destinos abaixo.", "You're on the public demo. You can go through the whole guide: the result stays in this browser only. For your own house, deploy your own copy to one of the targets below.")}</div>` : ""}
       <div class="choice">
-        <button class="opt ${temp.target === "cloudflare" ? "on" : ""}" data-t="cloudflare" aria-pressed="${temp.target === "cloudflare"}"><b>Cloudflare Workers</b><small>${L("Grátis no plano gratuito. Endereço https próprio, nada ligado em casa.", "Free on the free plan. Your own https address, nothing running at home.")}</small></button>
+        <button class="opt ${temp.target === "cloudflare" ? "on" : ""}" data-t="cloudflare" aria-pressed="${temp.target === "cloudflare"}"><b>Cloudflare Workers</b><small>${L("Funciona no plano gratuito. Endereço https próprio, sem nada ligado em casa.", "Works on the free plan. Your own https address, nothing running at home.")}</small></button>
         <button class="opt ${temp.target === "docker" ? "on" : ""}" data-t="docker" aria-pressed="${temp.target === "docker"}"><b>Docker ${L("num Raspberry Pi ou NAS", "on a Raspberry Pi or NAS")}</b><small>${L("Corre na sua rede, ao lado do Home Assistant. Os dados ficam num volume local.", "Runs on your network next to Home Assistant. Data lives in a local volume.")}</small></button>
       </div>
       <ol class="g-howto" id="hostCmds"></ol>
@@ -213,7 +213,7 @@ npx wrangler@4 kv namespace create TWIN</pre></li>
   function stepKeys() {
     const demo = cfg.mode === "demo";
     const rows = [
-      ["OPENROUTER_API_KEY", L("Desenha as paredes a partir da planta e identifica plantas por fotografia.", "Drafts walls from your plan and identifies plants from photos."), L("Em openrouter.ai: crie uma conta e depois Keys, Create key.", "At openrouter.ai: create an account, then Keys, Create key.")],
+      ["OPENROUTER_API_KEY", L("Desenha as paredes a partir da planta da casa e identifica plantas por fotografia.", "Drafts walls from your plan and identifies plants from photos."), L("Em openrouter.ai: crie uma conta e depois Keys, Create key.", "At openrouter.ai: create an account, then Keys, Create key.")],
       ["HA_BASE_URL", L("O endereço do seu Home Assistant.", "Your Home Assistant address."), L("Por exemplo http://homeassistant.local:8123 ou o endereço remoto.", "For example http://homeassistant.local:8123 or your remote address.")],
       ["HA_TOKEN", L("Deixa a app ler o estado dos dispositivos.", "Lets the app read your devices' state."), L("No Home Assistant: o seu perfil, separador Segurança, Tokens de acesso de longa duração, Criar token.", "In Home Assistant: your profile, Security tab, Long-lived access tokens, Create token.")],
     ];
@@ -277,7 +277,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
         <div class="ic">${f.plan && temp.planUrls[f.id] ? `<img src="${esc(temp.planUrls[f.id])}" alt="">` : "▦"}</div>
         <div class="bd"><b>${esc(f.name)}</b><small>${f.walls.length ? `${n(f.walls.length, L("parede", "wall"), L("paredes", "walls"))}, ${n(f.rooms.length, L("divisão", "room"), L("divisões", "rooms"))}` : L("Ainda sem paredes", "No walls yet")}${f.plan ? `, ${L("escala", "scale")} ${(f.plan.m_per_px * 100).toFixed(2)} cm/px` : ""}</small>
         <div class="row">
-          <label class="btn small" style="flex:0;cursor:pointer">${f.plan ? L("Trocar planta", "Replace plan") : L("Carregar planta", "Upload plan")}<input type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" data-up="${esc(f.id)}" hidden></label>
+          <label class="btn small" style="flex:0;cursor:pointer">${f.plan ? L("Trocar planta do piso", "Replace floor plan") : L("Carregar planta do piso", "Upload floor plan")}<input type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" data-up="${esc(f.id)}" hidden></label>
           ${f.plan ? `<button class="btn small" style="flex:0" data-cal="${esc(f.id)}">${L("Escala", "Scale")}</button>` : ""}
           ${f.plan ? `<button class="btn small primary" style="flex:0" data-ai="${esc(f.id)}" ${hasKey ? "" : "disabled"}>${L("Rascunho com IA", "AI draft")}</button>` : ""}
           <button class="btn small" style="flex:0" data-ed="${esc(f.id)}">${L("Desenhar à mão", "Draw by hand")}</button>
@@ -287,7 +287,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
         const file = x.files[0]; if (!file) return;
         const f = w.floors.find((q) => q.id === x.dataset.up);
         let img;
-        try { img = await cleanImage(file, cfg.mode === "demo" ? 1600 : 3000, "image/jpeg", { pickPage: (n) => +prompt(L(`O PDF tem ${n} páginas. Em qual está a planta?`, `The PDF has ${n} pages. Which one has the plan?`), "1") }); } catch (err) { return ctx.toast(L("Não foi possível ler o ficheiro: ", "Could not read the file: ") + err.message); }
+        try { img = await cleanImage(file, cfg.mode === "demo" ? 1600 : 3000, "image/jpeg", { pickPage: (n) => +prompt(L(`O PDF tem ${n} páginas. Em qual está a planta do piso?`, `The PDF has ${n} pages. Which one has the floor plan?`), "1") }); } catch (err) { return ctx.toast(L("Não foi possível ler o ficheiro: ", "Could not read the file: ") + err.message); }
         const id = `plan-${f.id}`;
         const stored = await api.putAsset(id, img.dataUrl, img.mime);
         w.assets = w.assets.filter((a) => a.id !== id);
@@ -315,7 +315,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
       const box = body.querySelector("#calib");
       root.classList.add("has-tool");
       tool.innerHTML = `<div class="stage"><img id="cImg" src="${esc(temp.planUrls[f.id])}" alt=""><svg id="cSvg"></svg></div>`;
-      box.innerHTML = `<h2>${L("Escala", "Scale")}: ${esc(f.name)}</h2><p>${L("Toque em dois pontos com uma distância conhecida (uma cota da planta, por exemplo) e escreva a distância real.", "Tap two points with a known distance (a dimension line, for example) and type the real distance.")}</p>
+      box.innerHTML = `<h2>${L("Escala", "Scale")}: ${esc(f.name)}</h2><p>${L("Toque em dois pontos com uma distância conhecida (uma cota da planta do piso, por exemplo) e escreva a distância real.", "Tap two points with a known distance (a dimension line, for example) and type the real distance.")}</p>
         <div class="row"><input id="cDist" type="number" step="0.01" placeholder="${L("metros", "metres")}" style="max-width:140px"><button class="btn small primary" style="flex:0" id="cOk">${L("Aplicar escala", "Apply scale")}</button><span class="meta" id="cInfo"></span></div>`;
       const img = tool.querySelector("#cImg"), svgEl = tool.querySelector("#cSvg"), stage = tool.querySelector(".stage");
       let k = 1, pts = [];
@@ -397,7 +397,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
   // ---------------------------------------------------------------- 6. north
   function stepNorth() {
     const arrow = northArrowFromBearing(w.location.bearing_deg);
-    body.innerHTML = `<p class="lead">${L("Rode a seta até apontar para o norte na planta. Se a planta tiver uma seta de norte, alinhe-a com ela. É isto que põe o sol e as sombras no sítio certo.", "Turn the arrow until it points north on the plan. If the plan has a north arrow, match it. This puts the sun and shadows in the right place.")}</p>
+    body.innerHTML = `<p class="lead">${L("Rode a seta até apontar para o norte na planta da casa. Se a planta da casa tiver uma seta de norte, alinhe-a com ela. É isto que põe o sol e as sombras no sítio certo.", "Turn the arrow until it points north on the floor plan. If the floor plan has a north arrow, match it. This puts the sun and shadows in the right place.")}</p>
       <label class="f" for="nAng">${L("Ângulo da seta", "Arrow angle")}</label><input type="range" min="0" max="359" value="${Math.round(arrow)}" id="nAng">
       <div class="note" id="nInfo"></div>`;
     const f = w.floors[0];
@@ -408,7 +408,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
       stage.querySelector("#nArr").setAttribute("transform", `rotate(${a})`);
       const cards = L(["N", "NE", "E", "SE", "S", "SO", "O", "NO"], ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]);
       const downAz = (w.location.bearing_deg + 90) % 360;
-      body.querySelector("#nInfo").textContent = L(`A parte de baixo da planta está virada a ${cards[Math.round(downAz / 45) % 8]} (${Math.round(downAz)}°).`, `The bottom of the plan faces ${cards[Math.round(downAz / 45) % 8]} (${Math.round(downAz)}°).`);
+      body.querySelector("#nInfo").textContent = L(`A parte de baixo da planta da casa está virada a ${cards[Math.round(downAz / 45) % 8]} (${Math.round(downAz)}°).`, `The bottom of the floor plan faces ${cards[Math.round(downAz / 45) % 8]} (${Math.round(downAz)}°).`);
       preview.setBearing(w.location.bearing_deg);
     };
     body.querySelector("#nAng").oninput = (e) => set(+e.target.value);
@@ -499,7 +499,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
         <button class="opt ${d.walls === "full" ? "on" : ""}" data-wm="full" aria-pressed="${d.walls === "full"}"><b>${L("Inteiras", "Full height")}</b><small>${L("A casa como é por fora; para ver dentro, escolha um piso.", "The house as it looks outside; pick a floor to look inside.")}</small></button>
       </div>
       <div id="cutRow" class="${d.walls === "full" ? "hidden" : ""}"><label class="f" for="wCut">${L("Altura do corte", "Cut height")}: <b id="wCutV">${fmt(d.wall_cut ?? 1.2)}</b></label><input type="range" id="wCut" min="0.8" max="2" step="0.05" value="${d.wall_cut ?? 1.2}"></div>
-      <p class="meta">${L("As paredes com 20 cm ou mais contam como exteriores. Acerte espessuras, portas e janelas no editor.", "Walls 20 cm or thicker count as exterior. Adjust thickness, doors and windows in the editor.")}</p>
+      <p class="meta">${L("As paredes com 20 cm de espessura ou mais contam como exteriores. Acerte espessuras, portas e janelas no editor.", "Walls 20 cm or thicker count as exterior. Adjust thickness, doors and windows in the editor.")}</p>
       <button class="btn small" id="wEd">${L("Abrir no editor", "Open in the editor")}</button>`;
     body.querySelectorAll("[data-wm]").forEach((b) => (b.onclick = () => {
       d.walls = b.dataset.wm;
@@ -531,7 +531,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
       <div class="choice four">${types.map(([t, n]) => `<button class="opt ${roof?.type === t ? "on" : ""}" data-rt="${t}"><b>${n}</b></button>`).join("")}</div>
       <div class="row"><label style="flex:1">${L("Inclinação (°)", "Pitch (°)")}<input type="number" id="rP" min="5" max="60" value="${roof?.pitch_deg || 30}"></label>
         <label style="flex:1">${L("Beiral (m)", "Overhang (m)")}<input type="number" id="rO" step="0.05" min="0" max="1.5" value="${roof?.overhang ?? 0.4}"></label>
-        <label style="flex:1">${L("Cumeeira", "Ridge")}<select id="rR"><option value="x">${L("Ao comprido", "Lengthwise")}</option><option value="y" ${roof?.ridge === "y" ? "selected" : ""}>${L("Ao través", "Crosswise")}</option></select></label></div>
+        <label style="flex:1">${L("Cumeeira", "Ridge")}<select id="rR"><option value="x">${L("Ao comprido", "Lengthwise")}</option><option value="y" ${roof?.ridge === "y" ? "selected" : ""}>${L("Na transversal", "Crosswise")}</option></select></label></div>
       <p class="meta">${L("Telhados mais complexos (vários volumes, mansardas) acertam-se depois no editor, piso a piso.", "More complex roofs (several volumes, dormers) can be refined later in the editor, floor by floor.")}</p>
       <h2>${L("Terreno", "Terrain")}</h2>
       <div class="row"><label style="flex:1">${L("Tipo", "Type")}<select id="tT"><option value="flat">${L("Plano", "Flat")}</option><option value="slope" ${w.site.terrain.type === "slope" ? "selected" : ""}>${L("Inclinado", "Sloped")}</option></select></label>
@@ -604,7 +604,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
       el.innerHTML = `<div class="row">
         <label style="flex:1">kWp<input type="number" step="0.1" min="0.2" max="50" id="sK" value="${arr.kwp}"></label>
         <label style="flex:1">${L("Painéis", "Panels")}<input type="number" min="1" max="80" id="sN" value="${arr.panels}"></label>
-        <label style="flex:1">${L("Água virada para", "Roof face toward")}<select id="sF" title="${L("Em relação à planta", "Relative to the plan")}">${[["+y", L("Baixo", "Bottom")], ["-y", L("Cima", "Top")], ["+x", L("Direita", "Right")], ["-x", L("Esquerda", "Left")]].map(([f, n]) => `<option value="${f}" ${arr.face === f ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>`;
+        <label style="flex:1">${L("Água virada para", "Roof face toward")}<select id="sF" title="${L("Em relação à planta da casa", "Relative to the floor plan")}">${[["+y", L("Baixo", "Bottom")], ["-y", L("Cima", "Top")], ["+x", L("Direita", "Right")], ["-x", L("Esquerda", "Left")]].map(([f, n]) => `<option value="${f}" ${arr.face === f ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>`;
       el.querySelector("#sK").onchange = (e) => (arr.kwp = +e.target.value);
       el.querySelector("#sN").onchange = (e) => { arr.panels = +e.target.value; refresh(); };
       el.querySelector("#sF").onchange = (e) => { arr.face = e.target.value; refresh(); };
@@ -652,7 +652,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
   }
 
   go(i);
-  if (resumed) ctx.toast(L(`Continuou onde ficou: ${STEPS[i].title}.`, `Picked up where you left off: ${STEPS[i].title}.`), 3200);
+  if (resumed) ctx.toast(L(`Retomou onde tinha ficado: ${STEPS[i].title}.`, `Picked up where you left off: ${STEPS[i].title}.`), 3200);
   return { root };
 }
 

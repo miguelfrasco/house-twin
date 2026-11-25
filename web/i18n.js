@@ -2,7 +2,7 @@
 const S = {
   en: {
     app: "House twin", demo: "Demo house", demo_note: "Fictional demo house. Nothing here is a real place.",
-    sun: "Sun", plants: "Plants", wifi: "Wi-Fi", homeassistant: "Home", solar: "Solar", cameras: "Cameras", furniture: "Furniture",
+    sun: "Sun", plants: "Plants", wifi: "Wi-Fi", homeassistant: "Devices", solar: "Solar", cameras: "Cameras", furniture: "Furniture",
     all_floors: "All", roof: "Roof", edit: "Edit", setup: "Set up my house", export: "Export", login: "Sign in", logout: "Sign out",
     password: "Password", loading: "Loading the house…", today: "Today", now: "Now",
     sun_hours: "h of direct sun", direct_sun_day: "Direct sun on this day", computing: "Calculating sun exposure…",
@@ -28,7 +28,7 @@ const S = {
   },
   "pt-PT": {
     app: "Gémeo da casa", demo: "Casa de demonstração", demo_note: "Casa fictícia de demonstração. Nada aqui é um sítio real.",
-    sun: "Sol", plants: "Plantas", wifi: "Wi-Fi", homeassistant: "Casa", solar: "Solar", cameras: "Câmaras", furniture: "Mobília",
+    sun: "Sol", plants: "Plantas", wifi: "Wi-Fi", homeassistant: "Dispositivos", solar: "Solar", cameras: "Câmaras", furniture: "Mobília",
     all_floors: "Todos", roof: "Telhado", edit: "Editar", setup: "Configurar a minha casa", export: "Exportar", login: "Entrar", logout: "Sair",
     password: "Palavra-passe", loading: "A carregar a casa…", today: "Hoje", now: "Agora",
     sun_hours: "h de sol direto", direct_sun_day: "Sol direto neste dia", computing: "A calcular a exposição solar…",

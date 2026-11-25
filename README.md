@@ -183,7 +183,7 @@ Your real house profile should not live in a public fork: keep it in your deploy
 
 ## Em português
 
-O house twin é um gémeo digital da sua casa, para fazer fork e alojar por sua conta: grátis no Cloudflare Workers ou em Docker num Raspberry Pi. A partir das plantas em 2D (imagem ou PDF, desenhadas à mão ou com rascunho por IA) gera a casa em 3D, mostra o sol direto em cada divisão ao longo do dia e junta plantas, Wi-Fi, Home Assistant, painéis solares e câmaras. Tudo fica numa só vista 3D, com camadas que pode mostrar ou ocultar e um painel de detalhes que abre quando precisa; as paredes ficam a meia altura para se ver o interior. Um guia passo a passo ajuda a configurar a casa e pode ser retomado mais tarde. Os dados ficam no seu armazenamento, sem telemetria. A interface está em português europeu (`?lang=pt`). As instruções de instalação acima aplicam-se tal e qual.
+O house twin é um gémeo digital da sua casa, para fazer fork e alojar por sua conta: grátis no Cloudflare Workers ou em Docker num Raspberry Pi. A partir das plantas dos pisos em 2D (imagem ou PDF, desenhadas à mão ou com rascunho por IA) gera a casa em 3D, mostra o sol direto em cada divisão ao longo do dia e junta plantas, Wi-Fi, Home Assistant, painéis solares e câmaras. Tudo fica numa só vista 3D, com camadas que pode mostrar ou ocultar e um painel de detalhes que abre quando precisa; as paredes ficam a meia altura para se ver o interior. Um guia passo a passo ajuda a configurar a casa e pode ser retomado mais tarde. Os dados ficam no seu armazenamento, sem telemetria. A interface está em português europeu (`?lang=pt`). As instruções de instalação acima aplicam-se tal e qual.
 
 ## Licence
 

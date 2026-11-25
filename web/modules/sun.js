@@ -126,7 +126,7 @@ export default {
       ${progress < 1 ? `<div class="note">${esc(t("computing"))}<div class="progress" id="sunProg"><i style="width:${progress * 100}%"></i></div></div>` : ""}
       <div class="list">${roomRows.map((r) => `<div class="card" data-f="${esc(r.fid)}"><div class="bd"><b>${esc(r.name)}</b><small>${esc(r.floor)} · ${pt ? "máx." : "max"} ${fmtNum(r.max, 1)} h</small><div class="bar"><i style="width:${Math.min(100, (r.avg / Math.max(1, dl)) * 100)}%"></i></div></div><span class="val">${fmtNum(r.avg, 1)} h</span></div>`).join("")}</div>
       <div class="legend"><span>0 h</span><i></i><span>${fmtNum(dl, 0)} h</span></div>
-      <div class="note">${pt ? "Escolha um piso à direita para ver o mapa de calor do sol direto. As horas contam só o sol que entra pelas janelas ou chega ao jardim, com as paredes e o telhado a fazer sombra." : "Pick a floor on the right to see the direct-sun heat map. Hours only count sun that comes through windows or reaches the garden, with walls and roof casting shade."}</div>`;
+      <div class="note">${pt ? "O mapa de calor mostra as horas de sol direto em cada divisão; escolha um piso à direita para ver um piso de cada vez, com o jardim. As horas contam só o sol que entra pelas janelas ou chega ao jardim, com as paredes e o telhado a fazer sombra." : "The heat map shows direct-sun hours in each room; pick a floor on the right to see one floor at a time, with the garden. Hours only count sun that comes through windows or reaches the garden, with walls and roof casting shade."}</div>`;
     el.querySelectorAll("[data-d]").forEach((b) => (b.onclick = () => {
       ctx.state.date = `${ctx.state.date.slice(0, 4)}-${b.dataset.d}`;
       document.querySelector("#dateIn").value = ctx.state.date;
