@@ -10,7 +10,8 @@ export const SCHEMA_VERSION = 1;
 
 export const OPENING_TYPES = ["door", "window", "garage", "opening"];
 export const ROOF_TYPES = ["gable", "hip", "shed", "flat"];
-export const MODULE_IDS = ["plants", "wifi", "homeassistant", "solar", "cameras"];
+export const MODULE_IDS = ["plants", "wifi", "homeassistant", "solar", "cameras", "furniture"];
+export const SITE_FEATURES = ["sunken", "paving", "ramp", "wall", "gate"];
 
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const isPt = (p) => Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1]);
@@ -69,6 +70,14 @@ export function validate(profile) {
   const t = p.site?.terrain;
   if (t && !["flat", "slope"].includes(t.type)) err("site.terrain.type", "flat | slope");
   if (t?.type === "slope" && !(isNum(t.grade_pct) && t.grade_pct >= 0 && t.grade_pct <= 60)) err("site.terrain.grade_pct", "0..60");
+  (p.site?.features || []).forEach((f, i) => {
+    const sp = `site.features[${i}]`;
+    if (!SITE_FEATURES.includes(f.type)) return err(`${sp}.type`, SITE_FEATURES.join(" | "));
+    if (["sunken", "paving"].includes(f.type) && !(Array.isArray(f.polygon) && f.polygon.length >= 3 && f.polygon.every(isPt))) err(`${sp}.polygon`, "≥ 3 points [x,y]");
+    if (f.type === "ramp" && !(Array.isArray(f.path) && f.path.length >= 2 && f.path.every(isPt))) err(`${sp}.path`, "≥ 2 points [x,y]");
+    if (["wall", "gate"].includes(f.type) && !(isPt(f.a) && isPt(f.b))) err(sp, "a and b must be [x,y]");
+    if (f.entity_id !== undefined && !/^cover\.[\w-]+$/.test(f.entity_id)) err(`${sp}.entity_id`, "a cover.* entity");
+  });
   if (!Array.isArray(p.floors) || !p.floors.length) err("floors", "at least one floor");
   const floorIds = new Set();
   (p.floors || []).forEach((f, i) => {
@@ -129,6 +138,11 @@ export function validate(profile) {
   });
   if (p.site?.aerial?.source === "google") err("site.aerial.source", "Google imagery cannot be stored; upload your own image or use esri");
   for (const k of Object.keys(p.modules || {})) if (!MODULE_IDS.includes(k)) err(`modules.${k}`, "unknown module");
+  (p.modules?.furniture?.items || []).forEach((it, i) => {
+    if (!isStr(it.id) || !isStr(it.type)) err(`modules.furniture.items[${i}]`, "id and type required");
+    if (!floorIds.has(it.floor)) err(`modules.furniture.items[${i}].floor`, "must reference a floor");
+    if (!isPt(it.pos)) err(`modules.furniture.items[${i}].pos`, "[x,y]");
+  });
   return { ok: e.length === 0, errors: e };
 }
 

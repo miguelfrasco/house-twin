@@ -5,4 +5,5 @@ import wifi from "./wifi.js";
 import homeassistant from "./homeassistant.js";
 import solar from "./solar.js";
 import cameras from "./cameras.js";
-export const MODULES = [sun, plants, wifi, homeassistant, solar, cameras];
+import furniture from "./furniture.js";
+export const MODULES = [sun, plants, wifi, homeassistant, solar, cameras, furniture];

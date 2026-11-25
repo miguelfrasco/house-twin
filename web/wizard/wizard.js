@@ -5,7 +5,7 @@ import { getLang } from "../i18n.js";
 import { cleanImage } from "../api.js";
 import { createMap, geocode, metresPerPixel } from "./map.js";
 import { draftToFloor, rectangleFloor, rectsOf } from "./convert.js";
-import { computeOutline } from "../editor/editor.js";
+import { computeOutline, pdfScale } from "../editor/editor.js";
 import { PLAN_PROMPT, extractJsonClient, sanitizeDraft } from "./prompt.js";
 
 const L = (pt, en) => (getLang() === "pt-PT" ? pt : en);
@@ -179,7 +179,7 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
         <div class="bd" style="min-width:220px"><input value="${esc(f.name)}" data-name="${esc(f.id)}" style="max-width:260px">
           <small style="margin-top:6px">${L("Pé-direito", "Height")} <input type="number" step="0.05" min="2" max="6" value="${f.height}" data-h="${esc(f.id)}" style="width:80px;display:inline-block;padding:4px 6px"> m · ${f.walls.length} ${L("paredes", "walls")} · ${f.rooms.length} ${L("divisões", "rooms")}${f.plan ? ` · ${L("escala", "scale")} ${(f.plan.m_per_px * 100).toFixed(2)} cm/px` : ""}</small></div>
         <div class="row" style="margin:6px 0 0;flex:1 1 100%">
-          <label class="btn small" style="flex:0;cursor:pointer">⬆ ${L("Planta", "Plan")}<input type="file" accept="image/png,image/jpeg,image/webp" data-up="${esc(f.id)}" hidden></label>
+          <label class="btn small" style="flex:0;cursor:pointer">⬆ ${L("Planta", "Plan")}<input type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" data-up="${esc(f.id)}" hidden></label>
           ${f.plan ? `<button class="btn small" style="flex:0" data-cal="${esc(f.id)}">📏 ${L("Escala", "Scale")}</button>` : ""}
           ${f.plan ? `<button class="btn small primary" style="flex:0" data-ai="${esc(f.id)}" ${hasKey ? "" : "disabled"}>✨ ${L("Rascunho com IA", "AI draft")}</button>` : ""}
           <button class="btn small" style="flex:0" data-ed="${esc(f.id)}">✎ ${L("Desenhar à mão", "Draw by hand")}</button>
@@ -190,14 +190,16 @@ npx wrangler@4 secret put HA_TOKEN</pre><p>${L("Depois de as definir, recarregue
       list.querySelectorAll("[data-up]").forEach((x) => (x.onchange = async () => {
         const file = x.files[0]; if (!file) return;
         const f = w.floors.find((q) => q.id === x.dataset.up);
-        const img = await cleanImage(file, cfg.mode === "demo" ? 1600 : 3000, "image/jpeg");
+        let img;
+        try { img = await cleanImage(file, cfg.mode === "demo" ? 1600 : 3000, "image/jpeg", { pickPage: (n) => +prompt(L(`O PDF tem ${n} páginas. Qual tem a planta?`, `The PDF has ${n} pages. Which one has the plan?`), "1") }); } catch (err) { return ctx.toast(L("Não consegui ler o ficheiro: ", "Could not read the file: ") + err.message); }
         const id = `plan-${f.id}`;
         const stored = await api.putAsset(id, img.dataUrl, img.mime);
         w.assets = w.assets.filter((a) => a.id !== id);
         w.assets.push({ id, kind: "plan", mime: img.mime, ...(stored.path ? { path: stored.path } : {}) });
-        f.plan = { asset: id, origin: [0, 0], m_per_px: f.plan?.m_per_px || 0.02, opacity: 0.6, width_px: img.width, height_px: img.height };
+        const sc = img.pdf ? pdfScale(img) : null;
+        f.plan = { asset: id, origin: [0, 0], m_per_px: sc || f.plan?.m_per_px || 0.02, opacity: 0.6, width_px: img.width, height_px: img.height };
         temp.planUrls[f.id] = img.dataUrl;
-        render(); calibrate(f);
+        render(); if (!sc) calibrate(f);
       }));
       list.querySelectorAll("[data-cal]").forEach((b) => (b.onclick = () => calibrate(w.floors.find((f) => f.id === b.dataset.cal))));
       list.querySelectorAll("[data-ai]").forEach((b) => (b.onclick = () => aiDraft(w.floors.find((f) => f.id === b.dataset.ai), b)));

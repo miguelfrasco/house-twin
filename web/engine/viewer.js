@@ -5,6 +5,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { buildHouse, buildGround, polygonCentroid } from "./build3d.js";
 import { sunVector } from "./sun.js";
+import { buildSite, animateGates } from "./site.js";
+import { buildFurnitureGroup, applyModelOverrides } from "./furniture.js";
 
 export class Viewer {
   constructor(canvas, labelsEl) {
@@ -52,6 +54,7 @@ export class Viewer {
     const loop = () => {
       this._raf = requestAnimationFrame(loop);
       this.controls.update();
+      if (this.site?.gates.length) animateGates(this.site.gates);
       this.renderer.render(this.scene, this.camera);
       this.updateLabels();
     };
@@ -76,6 +79,12 @@ export class Viewer {
     const asset = aerial && (profile.assets || []).find((a) => a.id === aerial.asset);
     this.ground = buildGround(profile, this.house.bounds, asset ? assetUrl(asset) : null);
     this.scene.add(this.ground);
+    if (this.site) this.scene.remove(this.site.group);
+    this.site = buildSite(profile);
+    this.scene.add(this.site.group);
+    this.house.occluders.push(...this.site.occluders);
+    this.furniture = buildFurnitureGroup(profile);
+    for (const p of [...this.furniture.children]) this.house.floors.get(p.userData.floorId)?.group.add(p); // follows floor focus
     // custom models per floor (e.g. a GLB exported from a CAD tool)
     const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
     for (const f of profile.floors) {
@@ -97,6 +106,9 @@ export class Viewer {
           }
         });
         this.house.floors.get(f.id).structure.add(m);
+        this.house.floors.get(f.id).model = m;
+        m.userData.modelRoot = true;
+        applyModelOverrides(m, profile.modules?.furniture?.overrides);
       } catch (e) { console.warn("model failed", e); }
     }
     for (const [, fl] of this.house.floors) {
@@ -214,13 +226,26 @@ export class Viewer {
       while (o && !o.userData.markerId) o = o.parent;
       if (o) return this.onPick({ marker: o.userData });
     }
+    if (this.pickModel) { // furniture editing: report the model node under the cursor
+      const objs = [];
+      for (const [id, x] of this.house.floors) if (x.group.visible && !this.floorHidden(id)) objs.push(x.structure, ...x.group.children.filter((c) => c.userData.furnitureId));
+      const h = this.raycaster.intersectObjects(objs, true).find((q) => q.object.visible);
+      if (h && this.pickModel(h)) return;
+    }
     const targets = [];
     for (const [, x] of this.house.floors) if (x.group.visible && !this.floorHidden(x.floor.id)) targets.push(...x.roomMeshes);
-    const ground = this.ground ? this.ground.children : [];
-    const hit = this.raycaster.intersectObjects([...targets, ...ground], false)[0];
+    const ground = this.ground?.visible ? this.ground.children : [];
+    const site = this.site ? this.site.group.children : [];
+    const hit = this.raycaster.intersectObjects([...targets, ...ground, ...site], false)[0];
     if (!hit) return;
     const u = hit.object.userData;
-    this.onPick({ floorId: u.floorId || this.focusFloor || this.profile.floors[0].id, roomId: u.roomId || null, pos: [hit.point.x, hit.point.z], ground: u.kind === "ground" });
+    if (u.kind === "gate") return this.onPick({ gate: u, pos: [hit.point.x, hit.point.z] });
+    let floorId = u.floorId || this.focusFloor;
+    if (!floorId) { // ground or site: the floor whose level is closest to the hit point
+      let best = Infinity;
+      for (const f of this.profile.floors) { const d = Math.abs(f.elevation - hit.point.y); if (d < best) { best = d; floorId = f.id; } }
+    }
+    this.onPick({ floorId, roomId: u.roomId || null, pos: [hit.point.x, hit.point.z], ground: u.kind === "ground" || site.includes(hit.object) });
   }
 
   /** Simple glowing marker sphere. */
@@ -253,6 +278,24 @@ export class Viewer {
     this.controls.target.set(b.cx, 0, b.cy);
     this.camera.position.set(b.cx, span * 2.1, b.cy + 0.01);
     this.controls.update();
+  }
+
+  /** Look down at the roofs (solar layout); shows every floor and roof. */
+  roofView() {
+    this.setFocus(null);
+    const b = this.house.bounds, span = Math.max(b.w, b.h, 8);
+    const top = Math.max(...this.profile.floors.map((f) => f.elevation + f.height));
+    this.controls.target.set(b.cx, top, b.cy);
+    this.camera.position.set(b.cx + span * 0.35, top + span * 1.35, b.cy + span * 0.55);
+    this.controls.update();
+  }
+
+  /** Open/closed state for gates linked to Home Assistant covers: { entity_id: "open" | "closed" | ... }. */
+  setGates(states) {
+    for (const g of this.site?.gates || []) {
+      const s = states[g.feature.entity_id]?.state;
+      if (s) g.open = s === "open" || s === "opening";
+    }
   }
 
   snapshot() { return this.renderer.domElement.toDataURL("image/png"); }

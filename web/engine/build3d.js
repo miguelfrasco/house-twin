@@ -1,5 +1,7 @@
 // Procedural 3D from the 2D profile. Plan (x, y) -> scene (x, z); height is scene y.
 import * as THREE from "three";
+import { groundHoles, planeWithHoles } from "./site.js";
+import { compassToPlan } from "./sun.js";
 
 export const COLORS = {
   wall: 0xe9e6df, wallExt: 0xd9d3c7, slab: 0xb8b2a6, glass: 0x9fe6ff, door: 0x6b4b36, garage: 0x8c939b,
@@ -215,6 +217,35 @@ function panelsOnFace(face, count, mat) {
   return { group, placed };
 }
 
+/** Rows of tilted panels on a flat roof, facing a.azimuth (compass, default south). */
+function panelsFlat(rf, a, count, bearing, mat) {
+  const group = new THREE.Group();
+  const az = a.azimuth ?? 180, tilt = ((a.tilt ?? 15) * Math.PI) / 180;
+  const [dx, dz] = compassToPlan(az, bearing);
+  const yaw = Math.atan2(dx, dz); // local +z -> facing direction
+  const pw = a.panel_w ?? 1.13, pd = a.panel_d ?? 1.72, gap = 0.03;
+  const perRow = a.per_row || Math.max(1, Math.ceil(Math.sqrt(count)));
+  const rows = Math.ceil(count / perRow);
+  const step = a.row_step ?? Math.max(pd * 1.6, 2.2);
+  const [cx, cz] = a.center || polygonCentroid(rf.roof.outline);
+  const rowLen = perRow * pw + (perRow - 1) * gap;
+  let placed = 0;
+  for (let r = 0; r < rows; r++) {
+    const row = new THREE.Group();
+    const off = (r - (rows - 1) / 2) * step; // rows stacked along the facing direction
+    row.position.set(cx + dx * off, rf.face.top, cz + dz * off);
+    row.rotation.y = yaw;
+    for (let c = 0; c < perRow && placed < count; c++, placed++) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(pw, 0.04, pd), mat);
+      p.position.set(-rowLen / 2 + pw / 2 + c * (pw + gap), 0.12 + (Math.sin(tilt) * pd) / 2, 0);
+      p.rotation.x = tilt; p.castShadow = true; p.userData.pv = true;
+      row.add(p);
+    }
+    group.add(row);
+  }
+  return { group, placed };
+}
+
 /**
  * Build the house. Returns { root, floors: Map(id -> {group, roomMeshes, labels}), roofs, occluders, bounds }.
  * occluders: meshes that block direct sun (no glass).
@@ -300,8 +331,24 @@ export function buildHouse(profile, opts = {}) {
     if (r.type === "flat") {
       const H = f.elevation + f.height;
       const m = slab(r.outline, H + 0.25, 0.25, M.roofFlat);
+      if (r.color) { m.material = M.roofFlat.clone(); m.material.color.set(r.color); }
       m.castShadow = true; m.receiveShadow = true; m.userData = { kind: "roof", roofId: r.id };
       grp.add(m); occluders.push(m);
+      roofFaceList.push({ roof: r, floor: f, face: { dir: "flat", top: H + 0.25 }, mesh: m });
+      if (r.parapet > 0) {
+        const T = 0.16, inside = (x, y) => pointInPolygon([x, y], r.outline);
+        for (let i = 0; i < r.outline.length; i++) {
+          const a = r.outline[i], bb = r.outline[(i + 1) % r.outline.length];
+          const L = Math.hypot(bb[0] - a[0], bb[1] - a[1]); if (L < 0.05) continue;
+          let nx = -(bb[1] - a[1]) / L, ny = (bb[0] - a[0]) / L;
+          const mx = (a[0] + bb[0]) / 2, my = (a[1] + bb[1]) / 2;
+          if (!inside(mx + nx * 0.3, my + ny * 0.3)) { nx = -nx; ny = -ny; }
+          const w = { a: [a[0] + (nx * T) / 2, a[1] + (ny * T) / 2], b: [bb[0] + (nx * T) / 2, bb[1] + (ny * T) / 2] };
+          const pm = boxAlong(w, 0, L, H + 0.25, H + 0.25 + r.parapet, T, 0, 0, m.material);
+          pm.castShadow = true; pm.userData = { kind: "roof", roofId: r.id };
+          grp.add(pm); occluders.push(pm);
+        }
+      }
     } else {
       const { faces, gables } = roofFaces(r, f);
       faces.forEach((fc) => {
@@ -330,7 +377,14 @@ export function buildHouse(profile, opts = {}) {
     for (const a of solar.arrays) {
       const rf = roofFaceList.find((x) => x.roof.id === a.roof && x.face.dir === a.face) || roofFaceList.find((x) => x.roof.id === a.roof);
       if (!rf) { arrays.push({ array: a, placed: 0 }); continue; }
-      const { group, placed } = panelsOnFace(rf.face, a.panels || Math.round((a.kwp || 1) / 0.4), M.panel);
+      const count = a.panels || Math.round((a.kwp || 1) / 0.4);
+      if (rf.face.dir === "flat") {
+        const { group, placed } = panelsFlat(rf, a, count, profile.location?.bearing_deg ?? 90, M.panel);
+        pv.add(group); occluders.push(...group.children.filter((c) => c.isMesh));
+        arrays.push({ array: a, placed, tilt: a.tilt ?? 15, azimuth: a.azimuth ?? 180, group });
+        continue;
+      }
+      const { group, placed } = panelsOnFace(rf.face, count, M.panel);
       pv.add(group);
       const ori = faceOrientation(rf.face, profile.location?.bearing_deg ?? 90);
       arrays.push({ array: a, placed, tilt: a.tilt ?? ori.tilt, azimuth: a.azimuth ?? ori.az, group });
@@ -361,7 +415,8 @@ export function buildGround(profile, bounds, textureUrl) {
   const g = new THREE.Group();
   const size = Math.max(bounds.w, bounds.h) + 60;
   const mat = new THREE.MeshStandardMaterial({ color: 0x3d5233, roughness: 1 });
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+  const holes = groundHoles(profile);
+  const plane = new THREE.Mesh(holes.length ? planeWithHoles(size, size, [bounds.cx, bounds.cy], 0, holes) : new THREE.PlaneGeometry(size, size), mat);
   plane.rotation.x = -Math.PI / 2;
   plane.position.set(bounds.cx, -0.02, bounds.cy);
   plane.receiveShadow = true;
@@ -373,10 +428,10 @@ export function buildGround(profile, bounds, textureUrl) {
       const tex = new THREE.CanvasTexture(canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
       const w = canvas.width * mpp, h = canvas.height * mpp;
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+      const c = a.center || [bounds.cx, bounds.cy];
+      const m = new THREE.Mesh(holes.length ? planeWithHoles(w, h, c, a.rotation_deg, holes) : new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
       m.rotation.x = -Math.PI / 2;
       m.rotation.z = -((a.rotation_deg || 0) * Math.PI) / 180;
-      const c = a.center || [bounds.cx, bounds.cy];
       m.position.set(c[0], -0.01, c[1]);
       m.receiveShadow = true; m.userData.kind = "ground";
       g.add(m);
@@ -386,10 +441,10 @@ export function buildGround(profile, bounds, textureUrl) {
     loader.load(textureUrl, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
       const w = tex.image.width * a.m_per_px, h = tex.image.height * a.m_per_px;
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+      const c = a.center || [a.origin[0] + w / 2, a.origin[1] + h / 2];
+      const m = new THREE.Mesh(holes.length ? planeWithHoles(w, h, c, a.rotation_deg, holes) : new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
       m.rotation.x = -Math.PI / 2;
       m.rotation.z = -((a.rotation_deg || 0) * Math.PI) / 180;
-      const c = a.center || [a.origin[0] + w / 2, a.origin[1] + h / 2];
       m.position.set(c[0], -0.01, c[1]);
       m.receiveShadow = true;
       m.userData.kind = "ground";

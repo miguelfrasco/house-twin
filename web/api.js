@@ -48,11 +48,20 @@ export const api = {
   async post(path, body) {
     return json(await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}), credentials: "same-origin" }));
   },
+  async put(path, body) {
+    return json(await fetch(path, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}), credentials: "same-origin" }));
+  },
+  async del(path) { return json(await fetch(path, { method: "DELETE", credentials: "same-origin" })); },
   async get(path) { return json(await fetch(path, { credentials: "same-origin" })); },
 };
 
 /** Re-encode an image file through a canvas: strips EXIF (incl. GPS) and caps the size. */
-export async function cleanImage(file, maxSide = 2400, type = "image/jpeg") {
+export async function cleanImage(file, maxSide = 2400, type = "image/jpeg", opts = {}) {
+  const { isPdf, renderPdf } = await import("./engine/pdf.js");
+  if (isPdf(file)) { // PDF plan: render the page in the browser (pdf.js), then treat it as an image
+    const r = await renderPdf(file, { maxSide, pickPage: opts.pickPage });
+    return { dataUrl: r.canvas.toDataURL(type, 0.86), width: r.canvas.width, height: r.canvas.height, mime: type, pdf: { page: r.page, pages: r.pages, m_per_px_1to1: r.m_per_px_1to1 } };
+  }
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });

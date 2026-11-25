@@ -15,7 +15,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 const DATA = process.env.DATA_DIR || join(process.cwd(), "data");
 const PORT = +process.env.PORT || 8787;
 const SECRETS_FILE = join(DATA, "secrets.env");
-const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json", ".glb": "model/gltf-binary", ".txt": "text/plain" };
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".pdf": "application/pdf", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webmanifest": "application/manifest+json", ".glb": "model/gltf-binary", ".txt": "text/plain" };
 
 function loadSecrets() {
   const env = { ...process.env };

@@ -111,3 +111,11 @@ pre.cmd{background:rgba(0,0,0,.4);border:1px solid var(--line);border-radius:12p
 }
 .thumbs{display:flex;gap:6px;margin:10px 0;overflow-x:auto}.thumbs img{width:64px;height:64px;object-fit:cover;border-radius:12px;border:1px solid var(--line);flex:none}
 .loglist{display:flex;flex-wrap:wrap;gap:6px}.loglist span{font-size:12px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+
+.grid3{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}.grid3 .chip{text-align:left}
+.pad{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px}.pad .wbtn{width:38px;height:38px;font-size:16px}
+label.toggle{display:flex;gap:8px;align-items:center;margin:12px 0 4px;font-size:13px;color:var(--muted);cursor:pointer}
+label.sw{position:relative;display:inline-block;width:40px;height:22px;flex:none}label.sw input{opacity:0;width:0;height:0}
+label.sw span{position:absolute;inset:0;border-radius:22px;background:rgba(255,255,255,.12);border:1px solid var(--line);transition:.2s;cursor:pointer}
+label.sw span:before{content:"";position:absolute;width:16px;height:16px;left:2px;top:2px;border-radius:50%;background:#cfd8e3;transition:.2s}
+label.sw input:checked+span{background:rgba(70,242,160,.35);border-color:rgba(70,242,160,.6)}label.sw input:checked+span:before{transform:translateX(18px);background:#46f2a0}

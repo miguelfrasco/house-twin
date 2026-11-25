@@ -71,3 +71,30 @@ test("AI draft: missing key, sanitizer, mocked OpenRouter", async () => {
   assert.match(sent.url, /openrouter\.ai\/api\/v1\/chat\/completions$/);
   assert.equal(sent.body.messages[0].content[1].image_url.url, "data:image/png;base64,AAAA");
 });
+
+test("Home Assistant proxy: doors need confirmation, automations stay in the safe subset", async () => {
+  const s = mem(), env = { HA_BASE_URL: "http://ha.test", HA_TOKEN: "t" };
+  const r = await handleApi(post("/api/setup/claim", { code: "open-sesame-123", password: "long-enough-pw" }), env, deps(s));
+  const cookie = r.headers.get("set-cookie").split(";")[0];
+  const calls = [], configs = { ht_a: { id: "ht_a", alias: "x", trigger: [{ platform: "time", at: "07:00:00" }], action: [{ service: "light.turn_on", target: { entity_id: "light.a" } }] }, manual: { id: "manual", alias: "y", trigger: [{ platform: "time", at: "07:00:00" }], condition: [{ condition: "x" }], action: [] } };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push([init.method || "GET", String(url).replace("http://ha.test", "")]);
+    const m = String(url).match(/automation\/config\/(\w+)$/);
+    if (m && (init.method || "GET") === "GET") return configs[m[1]] ? new Response(JSON.stringify(configs[m[1]])) : new Response("{}", { status: 404 });
+    return new Response("[]");
+  };
+  try {
+    const h = { cookie, origin: "https://house.test" };
+    assert.equal((await handleApi(post("/api/ha/service", { domain: "cover", service: "open_cover", entity_id: "cover.gate" }, h), env, deps(s))).status, 400);
+    assert.equal((await handleApi(post("/api/ha/service", { domain: "cover", service: "open_cover", entity_id: "cover.gate", confirm: true }, h), env, deps(s))).status, 200);
+    assert.equal((await handleApi(post("/api/ha/service", { domain: "lock", service: "unlock", entity_id: "lock.front" }, h), env, deps(s))).status, 400);
+    const put = (id, body) => handleApi(req(`/api/ha/automations/${id}`, { method: "PUT", headers: { ...h, "content-type": "application/json" }, body: JSON.stringify(body) }), env, deps(s));
+    const spec = { alias: "Morning", trigger: { type: "time", at: "07:30" }, actions: [{ entity_id: "light.a", service: "turn_on" }] };
+    assert.equal((await put("ht_a", spec)).status, 200);
+    assert.equal((await put("manual", spec)).status, 409); // made in HA: not overwritten
+    assert.equal((await put("ht_b", { ...spec, actions: [{ entity_id: "lock.x", service: "unlock" }] })).status, 400);
+    assert.ok(calls.some(([m, u]) => m === "POST" && u === "/api/config/automation/config/ht_a"));
+    assert.ok(!calls.some(([m, u]) => m === "POST" && u.endsWith("/manual")));
+  } finally { globalThis.fetch = realFetch; }
+});

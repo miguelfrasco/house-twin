@@ -3,6 +3,7 @@ import { migrate, validate } from "../web/profile/profile.js";
 import { hashPassword, verifyPassword, makeSession, checkSession, cookie, readCookie, randomToken, timingSafeEqual } from "./auth.js";
 import { draftPlan } from "./ai.js";
 import { handleCare } from "./care.js";
+import { ACTIONS, validSpec, toHA, fromHA } from "../web/profile/automation.js";
 
 export const SECRET_NAMES = ["OPENROUTER_API_KEY", "HA_BASE_URL", "HA_TOKEN"];
 const MAX_PROFILE = 2_000_000, MAX_ASSET = 8_000_000, MAX_STATE = 200_000;
@@ -182,8 +183,46 @@ async function haProxy(req, env, path, url) {
   }
   if (path === "/api/ha/service" && req.method === "POST") {
     const b = await req.json().catch(() => ({}));
-    if (!["light", "switch", "fan"].includes(b.domain) || !["turn_on", "turn_off", "toggle"].includes(b.service) || !/^[a-z_]+\.[\w-]+$/.test(b.entity_id || "") || !b.entity_id.startsWith(b.domain + ".")) return fail(400, "service not allowed");
+    const allowed = { ...ACTIONS, cover: [...ACTIONS.cover, "stop_cover"], automation: ["turn_on", "turn_off", "trigger"] };
+    if (!(allowed[b.domain] || []).includes(b.service) || !/^[a-z_]+\.[\w-]+$/.test(b.entity_id || "") || !b.entity_id.startsWith(b.domain + ".")) return fail(400, "service not allowed");
+    if (b.domain === "cover" && b.confirm !== true) return fail(400, "confirm required for doors and gates");
     const r = await ha(`/api/services/${b.domain}/${b.service}`, { method: "POST", body: JSON.stringify({ entity_id: b.entity_id }) });
+    return r.ok ? json({ ok: true }) : fail(502, `Home Assistant ${r.status}`);
+  }
+  if (path === "/api/ha/areas" && req.method === "GET") {
+    // HA's REST API has no area registry; the template endpoint can list areas and their entities.
+    const tpl = '[{% for a in areas() %}{"id":{{ a|tojson }},"name":{{ area_name(a)|tojson }},"entities":{{ area_entities(a)|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]';
+    const r = await ha("/api/template", { method: "POST", body: JSON.stringify({ template: tpl }) });
+    if (!r.ok) return fail(502, `Home Assistant ${r.status}`);
+    try { return json(JSON.parse(await r.text()).slice(0, 200)); } catch { return fail(502, "could not read areas"); }
+  }
+  if (path === "/api/ha/automations" && req.method === "GET") {
+    const r = await ha("/api/states");
+    if (!r.ok) return fail(502, `Home Assistant ${r.status}`);
+    const autos = (await r.json()).filter((s) => s.entity_id.startsWith("automation.")).slice(0, 150);
+    const out = await Promise.all(autos.map(async (a) => {
+      const id = a.attributes?.id;
+      let spec = null;
+      if (id) { const c = await ha(`/api/config/automation/config/${encodeURIComponent(id)}`).catch(() => null); if (c?.ok) spec = fromHA(await c.json().catch(() => null)); }
+      return { entity_id: a.entity_id, id: id || null, name: a.attributes?.friendly_name || a.entity_id, state: a.state, last_triggered: a.attributes?.last_triggered || null, spec };
+    }));
+    return json(out);
+  }
+  const am = path.match(/^\/api\/ha\/automations\/([\w-]{3,64})$/);
+  if (am && req.method === "PUT") {
+    const spec = { ...(await req.json().catch(() => ({}))), id: am[1] };
+    const bad = validSpec(spec);
+    if (bad.length) return fail(400, `invalid automation: ${bad.join(", ")}`);
+    const cur = await ha(`/api/config/automation/config/${am[1]}`);
+    if (cur.ok && !fromHA(await cur.json().catch(() => null))) return fail(409, "this automation was made in Home Assistant; edit it there");
+    const r = await ha(`/api/config/automation/config/${am[1]}`, { method: "POST", body: JSON.stringify(toHA(spec)) });
+    return r.ok ? json({ ok: true, id: am[1] }) : fail(502, `Home Assistant ${r.status}`);
+  }
+  if (am && req.method === "DELETE") {
+    const cur = await ha(`/api/config/automation/config/${am[1]}`);
+    if (!cur.ok) return fail(404, "not found");
+    if (!fromHA(await cur.json().catch(() => null))) return fail(409, "this automation was made in Home Assistant; delete it there");
+    const r = await ha(`/api/config/automation/config/${am[1]}`, { method: "DELETE" });
     return r.ok ? json({ ok: true }) : fail(502, `Home Assistant ${r.status}`);
   }
   const cam = path.match(/^\/api\/ha\/camera\/(camera\.[\w-]+)$/);

@@ -6,36 +6,8 @@ import { cellMesh } from "../engine/exposure.js";
 import { pointInPolygon, bbox } from "../engine/build3d.js";
 import { getLang, fmtNum } from "../i18n.js";
 
-const DEF = { pl0_db: 40, n: 2.8, wall_db: 4, ext_wall_db: 9, floor_db: 15 };
-
-function segCross(p, q, a, b) {
-  const d = (q[0] - p[0]) * (b[1] - a[1]) - (q[1] - p[1]) * (b[0] - a[0]);
-  if (Math.abs(d) < 1e-12) return false;
-  const u = ((a[0] - p[0]) * (b[1] - a[1]) - (a[1] - p[1]) * (b[0] - a[0])) / d;
-  const v = ((a[0] - p[0]) * (q[1] - p[1]) - (a[1] - p[1]) * (q[0] - p[0])) / d;
-  return u > 0 && u < 1 && v > 0 && v < 1;
-}
-
-export function predict(profile, ap, floorId, pos, model = DEF) {
-  const fa = profile.floors.find((f) => f.id === ap.floor), fb = profile.floors.find((f) => f.id === floorId);
-  const dz = (fb?.elevation ?? 0) - (fa?.elevation ?? 0);
-  const d = Math.max(0.5, Math.hypot(pos[0] - ap.pos[0], pos[1] - ap.pos[1], dz));
-  let loss = model.pl0_db + 10 * model.n * Math.log10(d);
-  for (const w of fb?.walls || []) if (segCross(ap.pos, pos, w.a, w.b)) loss += (w.thickness ?? 0.2) >= 0.2 ? model.ext_wall_db : model.wall_db;
-  const floorsBetween = profile.floors.filter((f) => f.elevation > Math.min(fa.elevation, fb.elevation) + 0.01 && f.elevation <= Math.max(fa.elevation, fb.elevation) + 0.01).length;
-  loss += floorsBetween * model.floor_db;
-  return (ap.tx_dbm ?? 20) - loss;
-}
-
-export function calibrate(profile, wifi) {
-  const model = { ...DEF, ...(wifi.model || {}) };
-  const pts = wifi.survey || [];
-  if (!pts.length) return { model, offset: 0, n: 0, rmse: null };
-  const resid = pts.map((s) => s.rssi - Math.max(...wifi.aps.map((a) => predict(profile, a, s.floor, s.pos, model))));
-  const offset = resid.reduce((a, b) => a + b, 0) / resid.length;
-  const rmse = Math.sqrt(resid.reduce((a, r) => a + (r - offset) ** 2, 0) / resid.length);
-  return { model, offset, n: pts.length, rmse };
-}
+import { DEF, predict, calibrate, parseSurvey } from "../engine/wifi-model.js";
+export { predict, calibrate, parseSurvey };
 
 export function rssiColor(r) {
   const stops = [[-85, [1, 0.36, 0.42]], [-75, [1, 0.71, 0.28]], [-65, [0.27, 0.95, 0.63]], [-50, [0.36, 0.88, 1]]];
@@ -81,7 +53,7 @@ function draw(ctx) {
     const f = ctx.floorById(a.floor);
     v.addLabel(`📶 ${a.label}`, new THREE.Vector3(a.pos[0], (f?.elevation || 0) + 2.0, a.pos[1]), a.floor, "mk ap");
   }
-  for (const [i, s] of (w.survey || []).entries()) v.marker({ id: `s${i}`, floorId: s.floor, pos: s.pos, y: 1.0, color: 0xffffff, kind: "survey", size: 0.1 });
+  for (const [i, s] of (w.survey || []).entries()) v.marker({ id: `s${i}`, floorId: s.floor, pos: s.pos, y: 1.0, color: new THREE.Color(...rssiColor(s.rssi)).getHex(), kind: "survey", size: 0.12 });
   v.applyFocus();
 }
 
@@ -120,9 +92,22 @@ export default {
       <div class="list">${(w.aps || []).map((a) => `<div class="card"><div class="ic">📶</div><div class="bd"><b>${esc(a.label)}</b><small>${esc(ctx.floorById(a.floor)?.name || "")} · ${a.band || "5"} GHz · ${a.tx_dbm ?? 20} dBm</small></div></div>`).join("")}</div>
       <div class="kicker">${esc(t("wifi_weak"))}</div>
       <div class="list">${byRoom.slice(0, 5).map((r) => `<div class="card"><div class="bd"><b>${esc(r.name)}</b><small>${esc(r.floor)} · ${pt ? "pior" : "worst"} ${fmtNum(r.min, 0)} dBm</small></div><span class="val" style="color:rgb(${rssiColor(r.avg).map((v) => Math.round(v * 255)).join(",")})">${fmtNum(r.avg, 0)}</span></div>`).join("")}</div>
-      <div class="note">${cal?.n ? (pt ? `Modelo calibrado com ${cal.n} medições (erro ±${fmtNum(cal.rmse, 0)} dB).` : `Model calibrated with ${cal.n} measurements (±${fmtNum(cal.rmse, 0)} dB).`) : (pt ? "Sem medições: é só uma estimativa. Adicione pontos medidos para calibrar." : "No measurements: this is only an estimate. Add measured points to calibrate.")}</div>
-      ${ctx.api.canWrite ? `<div class="row"><button class="btn small" id="addAp">＋ ${pt ? "Ponto de acesso" : "Access point"}</button><button class="btn small" id="addSv">＋ ${pt ? "Medição" : "Measurement"}</button></div>` : ""}`;
+      <div class="note">${cal?.n ? (pt ? `Modelo calibrado com ${cal.n} medições (erro médio ±${fmtNum(cal.rmse, 1)} dB; ajustado: ${cal.fitted.map((f) => ({ offset: "nível", n: `expoente ${fmtNum(cal.model.n, 2)}`, wall_db: `paredes ${fmtNum(cal.model.wall_db, 1)} dB` })[f]).join(", ")}).` : `Model calibrated with ${cal.n} measurements (±${fmtNum(cal.rmse, 1)} dB; fitted: ${cal.fitted.map((f) => ({ offset: "level", n: `exponent ${fmtNum(cal.model.n, 2)}`, wall_db: `walls ${fmtNum(cal.model.wall_db, 1)} dB` })[f]).join(", ")}).`) : (pt ? "Sem medições: é só uma estimativa. Adicione ou importe pontos medidos para calibrar." : "No measurements: this is only an estimate. Add or import measured points to calibrate.")}</div>
+      ${ctx.api.canWrite ? `<div class="row"><button class="btn small" id="addAp">＋ ${pt ? "Ponto de acesso" : "Access point"}</button><button class="btn small" id="addSv">＋ ${pt ? "Medição" : "Measurement"}</button><button class="btn small" id="impSv">⇪ ${pt ? "Importar medições" : "Import survey"}</button>${(w.survey || []).length ? `<button class="btn small" id="clrSv">${pt ? "Apagar medições" : "Clear survey"}</button>` : ""}</div>
+      <input type="file" id="svFile" accept=".csv,.tsv,.txt,.json,text/csv,application/json" hidden>
+      <div class="note">${pt ? "Importar: CSV com colunas <code>floor,x,y,rssi</code> (e opcionalmente <code>ap,label</code>), em metros no referencial da planta, ou JSON com os mesmos campos." : "Import: CSV with <code>floor,x,y,rssi</code> columns (optional <code>ap,label</code>), in plan metres, or JSON with the same fields."}</div>` : ""}`;
     el.querySelector("#addAp")?.addEventListener("click", () => { const label = prompt(pt ? "Nome do ponto de acesso" : "Access point name", "AP"); if (!label) return; placing = { type: "ap", label: label.slice(0, 40) }; ctx.hint(t("click_to_place")); });
+    el.querySelector("#impSv")?.addEventListener("click", () => el.querySelector("#svFile").click());
+    el.querySelector("#svFile")?.addEventListener("change", async (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      let res; try { res = parseSurvey(await file.text(), ctx.profile); } catch (err) { return ctx.toast((pt ? "Ficheiro inválido: " : "Invalid file: ") + err.message); }
+      if (!res.points.length) return ctx.toast(pt ? "Nenhuma medição válida no ficheiro" : "No valid measurements in the file");
+      const replace = (w.survey || []).length ? confirm(pt ? `Substituir as ${w.survey.length} medições atuais? (Cancelar = juntar)` : `Replace the ${w.survey.length} current measurements? (Cancel = add)`) : true;
+      const prof = structuredClone(ctx.profile);
+      prof.modules.wifi.survey = replace ? res.points : [...(prof.modules.wifi.survey || []), ...res.points];
+      await ctx.saveProfile(prof, pt ? `${res.points.length} medições importadas${res.skipped.length ? ` (${res.skipped.length} linhas ignoradas)` : ""}` : `${res.points.length} measurements imported${res.skipped.length ? ` (${res.skipped.length} rows skipped)` : ""}`);
+    });
+    el.querySelector("#clrSv")?.addEventListener("click", async () => { if (!confirm(pt ? "Apagar todas as medições?" : "Delete all measurements?")) return; const prof = structuredClone(ctx.profile); prof.modules.wifi.survey = []; await ctx.saveProfile(prof); });
     el.querySelector("#addSv")?.addEventListener("click", () => { const v = prompt(pt ? "Sinal medido (dBm, p. ex. −60)" : "Measured signal (dBm, e.g. -60)", "-60"); const r = parseFloat(String(v).replace("−", "-")); if (!Number.isFinite(r)) return; placing = { type: "survey", rssi: Math.max(-100, Math.min(-20, r)) }; ctx.hint(t("click_to_place")); });
   },
 };

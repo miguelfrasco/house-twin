@@ -1,0 +1,13 @@
+# Wi-Fi survey for the demo house: floor (id or name), x, y in plan metres, measured RSSI in dBm, optional AP and label
+floor,x,y,rssi,ap,label
+f0,2.0,1.5,-49,ap1,Escritório
+f0,6.0,1.8,-38,ap1,Entrada
+f0,3.0,6.5,-55,ap1,Sala
+f0,9.5,6.0,-57,ap1,Cozinha
+f0,14.5,6.0,-72,ap1,Garagem
+f0,11.0,1.5,-50,ap1,Escadas
+f0,9.0,12.0,-74,ap1,Jardim
+Piso 1,2.0,2.0,-61,ap2,Quarto 1
+Piso 1,3.0,7.0,-56,ap2,Suite
+Piso 1,9.0,7.0,-42,ap2,Quarto 2
+Piso 1,6.0,1.5,-52,ap2,Casa de banho

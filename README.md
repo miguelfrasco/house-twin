@@ -12,13 +12,15 @@ It runs on **your** infrastructure: free on Cloudflare Workers, or in Docker on 
 
 | | |
 |---|---|
-| **3D from 2D** | Walls, rooms, doors, windows, garage doors and roofs (gable, hip, shed, flat) are generated from a small JSON profile. L-shaped houses get one roof per volume. You can also drop in your own `.glb` model per floor. |
+| **3D from 2D** | Walls, rooms, doors, windows, garage doors and roofs (gable, hip, shed, flat with a parapet) are generated from a small JSON profile. L-shaped houses get one roof per volume. You can also drop in your own `.glb` model per floor. Plans can be images or PDFs (rendered in your browser; give the printed scale, e.g. 1:100, and it is measured for you). |
 | **Sun** | Sun path for any day, sunrise and sunset, and a heat map of direct-sun hours per room and in the garden, with walls and roofs casting shadows. |
-| **Plants** 🪴 | Where each plant lives, when to water, and whether its spot gets the light it needs. Suggests better spots. |
-| **Wi-Fi** 📶 | Access points and a predicted signal map through walls and floors; calibrates itself from a few measurements. |
-| **Home Assistant** 🏠 | Sensors, lights and switches pinned to rooms, with live state and toggles (lights, switches and fans only). |
+| **Plants** 🪴 | Where each plant lives, when to water (adjusted for the season and the sun it gets), and whether its spot gets the light it needs. Watering log, photos, AI identification and check-ins with your own OpenRouter key, and a daily push reminder (Web Push, no third-party service). |
+| **Wi-Fi** 📶 | Access points and a predicted signal map through walls and floors. Import a survey (CSV or JSON) and it fits the path-loss exponent and wall loss to your measurements. On floors that use a 3D model, walls can be detected from the model. |
+| **Home Assistant** 🏠 | Sensors, lights, switches and covers pinned to rooms, with live state and toggles; doors and gates always ask first. Place devices from your HA areas in one click. Simple automations (time, sunrise/sunset or a device changing → turn something on or off) are created and edited in HA; others are listed and can be switched on/off or run. |
 | **Solar** 🔆 | Panels on the roof and a clear-sky production estimate per hour, day and month, optionally adjusted with the Open-Meteo cloud forecast. |
-| **Cameras** 📷 | View cones in 3D; live snapshot through Home Assistant. |
+| **Cameras** 📷 | View cones in 3D (direction, angle and range set in the editor); live snapshot through Home Assistant. |
+| **Furniture** 🛋 | Simple furniture pieces you can add, move and turn, and pieces of an imported model you can move, turn or hide. |
+| **Site** | Sunken forecourts, paving, ramps, boundary walls and gates (gates follow a Home Assistant cover) in `site.features`. Roof view for the solar layout. |
 | **Languages** | English and European Portuguese (`?lang=pt` / `?lang=en`). |
 
 ![Editor with an AI-drafted plan](docs/screenshot-editor.jpg)
@@ -111,17 +113,28 @@ A single versioned JSON document (`schema: "house-twin/profile"`, `version: 1`).
 }
 ```
 
+Around the house, `site.features` takes `sunken` (cuts the lawn, adds retaining walls), `paving`, `ramp` (a path with a width and start/end heights), `wall` and `gate` (optionally with a Home Assistant `cover.*` entity):
+
+```jsonc
+"site": { "features": [
+  { "type": "sunken", "polygon": [[0,9],[8,9],[8,14],[0,14]], "y": -2.9, "open_edges": [0] },
+  { "type": "ramp", "path": [[8,11],[14,11],[18,6]], "width": 3.4, "y0": -2.9, "y1": -0.2 },
+  { "type": "gate", "a": [18,4], "b": [18,8], "y": -0.2, "height": 1.8, "style": "sliding", "entity_id": "cover.gate" }
+] }
+```
+
 See `web/demo/profile.json` for a complete example and `web/profile/profile.js` for validation. A sample plan image to try the wizard with is in `examples/`.
 
 ## Architecture
 
 - `web/`: the app. Plain ES modules, no build step; three.js r170 is vendored in `web/vendor/` (MIT).
   - `engine/`: procedural 3D (`build3d.js`), sun position and irradiance (`sun.js`), sun exposure by ray casting (`exposure.js`), viewer.
-  - `modules/`: one file per module (sun, plants, wifi, homeassistant, solar, cameras). Each exports a panel, 3D overlays and editor items.
+  - `modules/`: one file per module (sun, plants, wifi, homeassistant, solar, cameras, furniture). Each exports a panel, 3D overlays and editor items.
+  - `vendor/pdfjs/`: pdf.js 4.10 (Apache-2.0) to render PDF plans in the browser.
   - `editor/`: the 2D editor. `wizard/`: the first-run wizard.
 - `server/`: one API (`core.js`) shared by the Cloudflare Worker (`worker.js`, KV storage) and the Node server (`node.js`, file storage).
   - Auth: PBKDF2 password hash, HMAC-signed HttpOnly SameSite=Strict session cookie, login rate limit, same-origin check on writes.
-  - The Home Assistant proxy only allows `light`, `switch` and `fan` services.
+  - The Home Assistant proxy only allows a short list of services (lights, switches, fans, scenes, scripts, media, climate on/off, covers with an explicit confirmation, automations on/off/run). Automations it writes are limited to a simple, validated subset and it refuses to change automations made in HA itself.
 
 ## Development
 
@@ -149,14 +162,13 @@ Your real house profile should not live in a public fork: keep it in your deploy
 ## Limitations
 
 - Roofs are generated per rectangle of the top floor's outline; complex roofs (dormers, valleys between different heights) need a custom `.glb`.
-- Terrain is flat or a single slope.
-- PDF plans: export the page as an image first.
+- Terrain is flat or a single slope; level changes around the house are modelled with `site.features` (sunken areas, ramps).
 - The AI draft is a starting point. Expect to fix a few walls and openings in the editor.
 - Wi-Fi prediction is a simple path-loss model; calibrate it with a few measurements.
 
 ## Em português
 
-O house twin é um gémeo digital da sua casa, para fazer fork e alojar por sua conta: grátis no Cloudflare Workers ou em Docker num Raspberry Pi. A partir das plantas em 2D (desenhadas à mão ou com rascunho por IA) gera a casa em 3D, mostra o sol direto em cada divisão ao longo do dia e junta plantas, Wi-Fi, Home Assistant, painéis solares e câmaras. Os dados ficam no seu armazenamento, sem telemetria. A interface está em português europeu (`?lang=pt`). As instruções de instalação acima aplicam-se tal e qual.
+O house twin é um gémeo digital da sua casa, para fazer fork e alojar por sua conta: grátis no Cloudflare Workers ou em Docker num Raspberry Pi. A partir das plantas em 2D (imagem ou PDF, desenhadas à mão ou com rascunho por IA) gera a casa em 3D, mostra o sol direto em cada divisão ao longo do dia e junta plantas, Wi-Fi, Home Assistant, painéis solares e câmaras. Os dados ficam no seu armazenamento, sem telemetria. A interface está em português europeu (`?lang=pt`). As instruções de instalação acima aplicam-se tal e qual.
 
 ## Licence
 

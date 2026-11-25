@@ -66,6 +66,11 @@ const profile = {
     terrain: { type: "flat", grade_pct: 0, direction_deg: 0 },
     aerial: { asset: "aerial", source: "upload", origin: [-8, -7], m_per_px: 0.05, attribution: "Illustration, not a real place" },
     garden: [[-6, -5], [23, -5], [23, 16], [-6, 16]],
+    features: [
+      { id: "wallW", type: "wall", a: [-6, 16], b: [12.3, 16], y: 0, height: 1.4, thickness: 0.2 },
+      { id: "wallE", type: "wall", a: [16.0, 16], b: [23, 16], y: 0, height: 1.4, thickness: 0.2 },
+      { id: "gate", type: "gate", label: "Portão da rua", a: [12.3, 16], b: [16.0, 16], y: 0, height: 1.5, style: "sliding", entity_id: "cover.demo_street_gate" },
+    ],
   },
   floors: [f0, f1],
   roofs: [
@@ -108,6 +113,7 @@ const profile = {
         { id: "e3", entity_id: "binary_sensor.demo_front_door", label: "Porta de entrada", kind: "binary_sensor", floor: "f0", pos: [6.0, 0.4] },
         { id: "e4", entity_id: "sensor.demo_bedroom_humidity", label: "Humidade da suite", kind: "sensor", floor: "f1", pos: [3.0, 6.5] },
         { id: "e5", entity_id: "switch.demo_garden_irrigation", label: "Rega do jardim", kind: "switch", floor: "f0", pos: [16.5, 9.5] },
+        { id: "e6", entity_id: "cover.demo_garage_door", label: "Porta da garagem", kind: "cover", floor: "f0", pos: [14.1, 3.3] },
       ],
       mock_states: {
         "sensor.demo_living_temperature": { state: "21.4", attributes: { unit_of_measurement: "°C" } },
@@ -115,11 +121,33 @@ const profile = {
         "binary_sensor.demo_front_door": { state: "off", attributes: { device_class: "door" } },
         "sensor.demo_bedroom_humidity": { state: "54", attributes: { unit_of_measurement: "%" } },
         "switch.demo_garden_irrigation": { state: "off", attributes: {} },
+        "cover.demo_garage_door": { state: "closed", attributes: { device_class: "garage" } },
+        "cover.demo_street_gate": { state: "closed", attributes: { device_class: "gate" } },
       },
+      mock_automations: [
+        { entity_id: "automation.ht_kitchen_dusk", id: "ht_kitchen_dusk", name: "Luz da cozinha ao anoitecer", state: "on", last_triggered: null, spec: { id: "ht_kitchen_dusk", alias: "Luz da cozinha ao anoitecer", trigger: { type: "sun", event: "sunset", offset_min: -15 }, actions: [{ entity_id: "light.demo_kitchen", service: "turn_on" }] } },
+        { entity_id: "automation.ht_irrigation", id: "ht_irrigation", name: "Rega às 7h", state: "off", last_triggered: null, spec: { id: "ht_irrigation", alias: "Rega às 7h", trigger: { type: "time", at: "07:00" }, actions: [{ entity_id: "switch.demo_garden_irrigation", service: "turn_on" }] } },
+        { entity_id: "automation.away_mode", id: "away_mode", name: "Modo ausente (feita no Home Assistant)", state: "on", last_triggered: "2026-11-20T18:02:00Z", spec: null },
+      ],
     },
     solar: {
       enabled: true,
       arrays: [{ id: "pv1", label: "Telhado sul", roof: "r1", face: "+y", kwp: 3.6, panels: 9, loss_pct: 14 }],
+    },
+    furniture: {
+      enabled: true,
+      items: [
+        { id: "fu1", type: "sofa", floor: "f0", pos: [3.6, 7.9], rot_deg: 180 },
+        { id: "fu2", type: "coffee", floor: "f0", pos: [3.6, 6.6], rot_deg: 0 },
+        { id: "fu3", type: "tv", floor: "f0", pos: [3.6, 3.85], rot_deg: 0 },
+        { id: "fu4", type: "table", floor: "f0", pos: [9.6, 7.2], rot_deg: 0 },
+        { id: "fu5", type: "car", floor: "f0", pos: [14.4, 6.2], rot_deg: 0 },
+        { id: "fu6", type: "desk", floor: "f0", pos: [2.0, 0.5], rot_deg: 0 },
+        { id: "fu7", type: "bed_double", floor: "f1", pos: [3.0, 7.9], rot_deg: 180 },
+        { id: "fu8", type: "bed_single", floor: "f1", pos: [2.2, 1.2], rot_deg: 0 },
+        { id: "fu9", type: "bench", floor: "f0", pos: [6.0, 12.5], rot_deg: 0 },
+      ],
+      overrides: {},
     },
     cameras: {
       enabled: true,

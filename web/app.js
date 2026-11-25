@@ -79,6 +79,7 @@ function renderChrome() {
   const fb = $("#floorBar");
   fb.innerHTML = "";
   const mk = (id, label) => { const b = document.createElement("button"); b.textContent = label; b.className = ctx.state.floor === id ? "on" : ""; b.onclick = () => setFloor(id); fb.appendChild(b); };
+  if (p.roofs?.length) { const b = document.createElement("button"); b.textContent = t("roof"); b.id = "roofBtn"; b.onclick = () => { setFloor(null); ctx.viewer.roofView(); }; fb.appendChild(b); }
   mk(null, t("all_floors"));
   [...p.floors].reverse().forEach((f) => mk(f.id, f.name));
 }

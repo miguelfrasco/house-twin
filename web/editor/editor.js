@@ -3,12 +3,20 @@
 import { validate, uid, wallLength, OPENING_TYPES, ROOF_TYPES } from "../profile/profile.js";
 import { getLang } from "../i18n.js";
 import { cleanImage } from "../api.js";
+import { furnitureSize } from "../engine/furniture.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const ROOM_TYPES = ["living", "kitchen", "bedroom", "bathroom", "hall", "office", "garage", "stairs", "outdoor", "other"];
 const L = (pt, en) => (getLang() === "pt-PT" ? pt : en);
 const round = (v, s = 0.05) => Math.round(v / s) * s;
 const r2 = (v) => Math.round(v * 100) / 100;
+
+/** For a PDF at a printed scale (1:50, 1:100…), metres per pixel; null to calibrate by hand. */
+export function pdfScale(img) {
+  const v = prompt(L("Escala do desenho no PDF (p. ex. 100 para 1:100). Deixe vazio para calibrar com dois pontos.", "Drawing scale in the PDF (e.g. 100 for 1:100). Leave empty to calibrate with two points."), "100");
+  const d = parseFloat(String(v || "").replace(/^1\s*:\s*/, ""));
+  return Number.isFinite(d) && d >= 1 && d <= 5000 ? img.pdf.m_per_px_1to1 * d : null;
+}
 
 export function openEditor(ctx, opts = {}) {
   const { esc } = ctx;
@@ -56,19 +64,23 @@ export function openEditor(ctx, opts = {}) {
     const el = $("#edTools");
     el.innerHTML = `<div class="kicker">${L("Ferramentas", "Tools")}</div>` + TOOLS.map(([id, ic, label]) => `<button class="chip tool${tool === id ? " on" : ""}" data-tool="${id}">${ic} ${esc(label)}</button>`).join("") +
       `<div class="kicker">${L("Planta", "Plan image")}</div>
-       <label class="chip" style="text-align:center;cursor:pointer">⬆ ${L("Carregar imagem", "Upload image")}<input type="file" accept="image/png,image/jpeg,image/webp" id="edPlanFile" hidden></label>
+       <label class="chip" style="text-align:center;cursor:pointer">⬆ ${L("Carregar imagem ou PDF", "Upload image or PDF")}<input type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" id="edPlanFile" hidden></label>
        ${floor().plan ? `<label class="f">${L("Opacidade", "Opacity")}</label><input type="range" min="0" max="1" step="0.05" value="${floor().plan.opacity ?? 0.6}" id="edPlanOp">` : ""}
        <div class="note">${hintFor(tool)}</div>`;
     el.querySelectorAll("[data-tool]").forEach((b) => (b.onclick = () => { tool = b.dataset.tool; chain = null; roomPts = null; calib = null; renderTools(); draw(); }));
     el.querySelector("#edPlanFile").onchange = async (e) => {
       const f = e.target.files[0]; if (!f) return;
-      const img = await cleanImage(f, 3000, "image/jpeg");
+      let img;
+      try { img = await cleanImage(f, 3000, "image/jpeg", { pickPage: (n) => +prompt(L(`O PDF tem ${n} páginas. Qual tem a planta?`, `The PDF has ${n} pages. Which one has the plan?`), "1") }); } catch (err) { return ctx.toast(L("Não consegui ler o ficheiro: ", "Could not read the file: ") + err.message); }
       const id = `plan-${floorId}`;
       const stored = await ctx.api.putAsset(id, img.dataUrl, img.mime);
       draft.assets = (draft.assets || []).filter((a) => a.id !== id);
       draft.assets.push({ id, kind: "plan", mime: img.mime, ...(stored.path ? { path: stored.path } : {}) });
-      floor().plan = { asset: id, origin: [0, 0], m_per_px: 0.02, opacity: 0.6, width_px: img.width, height_px: img.height, _url: img.dataUrl };
-      commit(); tool = "calibrate"; renderTools(); fit(); draw();
+      const sc = img.pdf ? pdfScale(img) : null;
+      floor().plan = { asset: id, origin: [0, 0], m_per_px: sc || 0.02, opacity: 0.6, width_px: img.width, height_px: img.height, _url: img.dataUrl };
+      commit();
+      if (sc) { tool = "select"; renderTools(); fit(); draw(); ctx.toast(L("Escala aplicada. Confirme com uma medida conhecida (Escala da planta), se quiser.", "Scale applied. Check it against a known distance (Plan scale) if you like.")); return; }
+      tool = "calibrate"; renderTools(); fit(); draw();
       ctx.toast(L("Agora marque dois pontos com uma medida conhecida.", "Now mark two points with a known distance."));
     };
     el.querySelector("#edPlanOp")?.addEventListener("input", (e) => { floor().plan.opacity = +e.target.value; draw(); });
@@ -216,6 +228,14 @@ export function openEditor(ctx, opts = {}) {
     for (const it of items()) {
       if (it.floor !== floorId) continue;
       const on = sel?.type === "item" && sel.id === it.id;
+      if (it.mod === "cameras") { // view direction
+        const a = (it.yaw * Math.PI) / 180, fov = ((it.ref.fov_deg || 90) * Math.PI) / 360, r = Math.min(it.ref.range_m || 9, 4);
+        el("path", { d: `M ${it.pos[0]} ${it.pos[1]} L ${it.pos[0] + Math.cos(a - fov) * r} ${it.pos[1] + Math.sin(a - fov) * r} A ${r} ${r} 0 0 1 ${it.pos[0] + Math.cos(a + fov) * r} ${it.pos[1] + Math.sin(a + fov) * r} Z`, fill: "rgba(201,167,255,.14)", stroke: "rgba(201,167,255,.6)", "stroke-width": px, "pointer-events": "none" }, svg);
+      }
+      if (it.furn) { // footprint
+        const d = furnitureSize(it.ref), g = el("g", { transform: `translate(${it.pos[0]} ${it.pos[1]}) rotate(${it.yaw})`, "pointer-events": "none" }, svg);
+        el("rect", { x: -d.w / 2, y: -d.d / 2, width: d.w, height: d.d, fill: on ? "rgba(255,255,255,.25)" : "rgba(184,165,138,.25)", stroke: "#b8a58a", "stroke-width": px }, g);
+      }
       el("circle", { cx: it.pos[0], cy: it.pos[1], r: px * 9, fill: on ? "#ffffff" : it.color, stroke: "rgba(0,0,0,.5)", "stroke-width": px, "data-item": it.id }, svg);
       const t = el("text", { x: it.pos[0], y: it.pos[1] + px * 4, "font-size": px * 10, "text-anchor": "middle", "pointer-events": "none" }, svg);
       t.textContent = it.icon;
@@ -242,7 +262,8 @@ export function openEditor(ctx, opts = {}) {
     for (const p of m.plants?.items || []) out.push({ id: p.id, mod: "plants", ref: p, floor: p.floor, pos: p.pos, icon: "🪴", color: "#46f2a0", label: p.name });
     for (const a of m.wifi?.aps || []) out.push({ id: a.id, mod: "wifi", ref: a, floor: a.floor, pos: a.pos, icon: "📶", color: "#5ce1ff", label: a.label });
     for (const e of m.homeassistant?.entities || []) out.push({ id: e.id, mod: "homeassistant", ref: e, floor: e.floor, pos: e.pos, icon: "💡", color: "#ffd36b", label: e.label });
-    for (const c of m.cameras?.items || []) out.push({ id: c.id, mod: "cameras", ref: c, floor: c.floor, pos: c.pos, icon: "📷", color: "#c9a7ff", label: c.label });
+    for (const c of m.cameras?.items || []) out.push({ id: c.id, mod: "cameras", ref: c, floor: c.floor, pos: c.pos, icon: "📷", color: "#c9a7ff", label: c.label, yaw: c.yaw_deg ?? 0 });
+    for (const p of m.furniture?.items || []) out.push({ id: p.id, mod: "furniture", ref: p, floor: p.floor, pos: p.pos, icon: "🛋", color: "#b8a58a", label: p.label || p.type, yaw: p.rot_deg ?? 0, furn: true });
     return out;
   }
 
@@ -270,11 +291,14 @@ export function openEditor(ctx, opts = {}) {
     } else if (sel?.type === "item") {
       const it = items().find((x) => x.id === sel.id);
       h = `<div class="kicker">${it.icon} ${esc(it.label || "")}</div><div class="note">${L("Arraste para mudar de sítio.", "Drag to move it.")} (${r2(it.pos[0])}, ${r2(it.pos[1])})</div>
-        <label class="f">${L("Piso", "Floor")}</label><select id="pF">${draft.floors.map((x) => `<option value="${esc(x.id)}" ${x.id === it.floor ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`;
+        <label class="f">${L("Piso", "Floor")}</label><select id="pF">${draft.floors.map((x) => `<option value="${esc(x.id)}" ${x.id === it.floor ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>
+        ${it.mod === "cameras" ? `${num("pYaw", L("Direção no desenho (°, 0 = para a direita, 90 = para baixo)", "Direction on the plan (°, 0 = right, 90 = down)"), it.ref.yaw_deg ?? 0, 5, -360, 360)}${num("pFov", L("Ângulo de visão (°)", "Field of view (°)"), it.ref.fov_deg ?? 90, 5, 20, 180)}${num("pRng", L("Alcance (m)", "Range (m)"), it.ref.range_m ?? 9, 0.5, 1, 40)}` : ""}
+        ${it.furn ? `${num("pYaw", L("Rotação (°)", "Rotation (°)"), it.ref.rot_deg ?? 0, 15, -360, 360)}<div class="row"><button class="btn small" id="pDel">${L("Apagar", "Delete")}</button></div>` : ""}`;
     } else {
       const roofs = (draft.roofs || []).filter((r) => r.floor === floorId);
       h = `<div class="kicker">${L("Piso", "Floor")}</div><label class="f">${L("Nome", "Name")}</label><input id="fN" value="${esc(f.name)}" maxlength="40">
         ${num("fE", L("Cota do pavimento (m)", "Floor level (m)"), f.elevation, 0.05, -10, 60)}${num("fH", L("Pé-direito (m)", "Ceiling height (m)"), f.height, 0.05, 1.8, 8)}
+        ${f.model ? `<div class="note">${L("Este piso usa um modelo 3D. As paredes aqui só servem para a previsão de Wi-Fi e não são desenhadas em 3D.", "This floor uses a 3D model. Walls here only feed the Wi-Fi prediction and are not drawn in 3D.")}</div><div class="row"><button class="btn small" id="fSlice">${L("Detetar paredes do modelo", "Detect walls from the model")}</button></div>` : ""}
         <div class="row"><button class="btn small" id="fOut">${L("Calcular contorno", "Compute outline")}</button>${draft.floors.length > 1 ? `<button class="btn small" id="fDel">${L("Apagar piso", "Delete floor")}</button>` : ""}</div>
         <div class="kicker">${L("Telhado sobre este piso", "Roof over this floor")}</div>
         ${roofs.map((r) => `<div class="card" style="display:block"><label class="f">${L("Tipo", "Type")}</label><select data-rt="${esc(r.id)}">${ROOF_TYPES.map((t) => `<option ${t === r.type ? "selected" : ""}>${t}</option>`).join("")}</select>
@@ -301,11 +325,27 @@ export function openEditor(ctx, opts = {}) {
       on("#pY", "change", () => { o.type = el2.querySelector("#pY").value; commit(); draw(); });
       for (const [id, k] of [["#pW", "width"], ["#pH", "height"], ["#pS", "sill"], ["#pO", "offset"]]) on(id, "change", () => { o[k] = Math.max(0, numv(id)); o.offset = Math.min(o.offset, Math.max(0, wallLength(w) - o.width)); commit(); draw(); renderProps(); });
     }
-    if (sel?.type === "item") on("#pF", "change", () => { items().find((x) => x.id === sel.id).ref.floor = el2.querySelector("#pF").value; commit(); draw(); });
+    if (sel?.type === "item") {
+      const it = items().find((x) => x.id === sel.id);
+      on("#pF", "change", () => { it.ref.floor = el2.querySelector("#pF").value; commit(); draw(); });
+      on("#pYaw", "change", () => { it.ref[it.furn ? "rot_deg" : "yaw_deg"] = ((numv("#pYaw") % 360) + 360) % 360; commit(); draw(); });
+      on("#pFov", "change", () => { it.ref.fov_deg = Math.max(20, Math.min(180, numv("#pFov"))); commit(); draw(); });
+      on("#pRng", "change", () => { it.ref.range_m = Math.max(1, Math.min(40, numv("#pRng"))); commit(); draw(); });
+    }
     if (!sel) {
       on("#fN", "change", () => { f.name = el2.querySelector("#fN").value.trim() || f.name; commit(); renderFloors(); });
       on("#fE", "change", () => { f.elevation = numv("#fE"); commit(); });
       on("#fH", "change", () => { f.height = Math.max(1.8, numv("#fH")); commit(); });
+      on("#fSlice", "click", async () => {
+        const st = ctx.viewer.house?.floors.get(f.id)?.structure;
+        if (!st) return ctx.toast(L("Modelo ainda não carregado", "Model not loaded yet"));
+        const { wallsFromModel } = await import("../engine/slice.js");
+        const found = wallsFromModel(st, f.elevation, Math.min(1.2, f.height / 2));
+        if (!found.length) return ctx.toast(L("Não encontrei paredes no modelo", "No walls found in the model"));
+        if (f.walls.length && !confirm(L(`Substituir as ${f.walls.length} paredes deste piso por ${found.length} detetadas no modelo?`, `Replace this floor's ${f.walls.length} walls with ${found.length} found in the model?`))) return;
+        f.walls = found.map((w) => ({ id: uid("w"), ...w })); f.openings = [];
+        commit(); draw(); renderProps(); ctx.toast(L(`${found.length} paredes detetadas`, `${found.length} walls found`));
+      });
       on("#fOut", "click", () => { f.outline = computeOutline(f); commit(); ctx.toast(L("Contorno atualizado", "Outline updated")); });
       on("#fDel", "click", () => { if (!confirm(L("Apagar este piso?", "Delete this floor?"))) return; draft.floors = draft.floors.filter((x) => x.id !== f.id); draft.roofs = (draft.roofs || []).filter((r) => r.floor !== f.id); floorId = draft.floors[0].id; commit(); renderAll(); });
       on("#fRoof", "click", () => { if (!f.outline?.length) f.outline = computeOutline(f); if (f.outline.length < 3) return ctx.toast(L("Desenhe paredes primeiro", "Draw walls first")); draft.roofs ||= []; draft.roofs.push({ id: uid("roof"), floor: f.id, type: "gable", pitch_deg: 30, overhang: 0.4, ridge: "x", outline: bboxPoly(f.outline) }); commit(); renderProps(); });
