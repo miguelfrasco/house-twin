@@ -410,11 +410,13 @@ export function buildHouse(profile, opts = {}) {
       const count = a.panels || Math.round((a.kwp || 1) / 0.4);
       if (rf.face.dir === "flat") {
         const { group, placed } = panelsFlat(rf, a, count, profile.location?.bearing_deg ?? 90, M.panel);
+        group.userData.floorId = rf.roof.floor; // follows its floor in the exploded view
         pv.add(group); occluders.push(...group.children.filter((c) => c.isMesh));
         arrays.push({ array: a, placed, tilt: a.tilt ?? 15, azimuth: a.azimuth ?? 180, group });
         continue;
       }
       const { group, placed } = panelsOnFace(rf.face, count, M.panel);
+      group.userData.floorId = rf.roof.floor;
       pv.add(group);
       const ori = faceOrientation(rf.face, profile.location?.bearing_deg ?? 90);
       arrays.push({ array: a, placed, tilt: a.tilt ?? ori.tilt, azimuth: a.azimuth ?? ori.az, group });

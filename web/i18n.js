@@ -24,6 +24,8 @@ const S = {
     export_full: "Download a full private backup",
     north: "N",
     show: "Show", details: "Details", homeassistant_layer: "Devices", no_layers: "Turn on a layer under Show to see its details here.",
+    view: "View", layout_stacked: "Together", layout_stacked_d: "Stacked, like the real house", layout_exploded: "Separated", layout_exploded_d: "Exploded, one layer per floor",
+    focus_floor: "Focus on a floor", roof_d: "From above, with the panels", all_floors_back: "All floors", click_focus: "Click to focus", tap_focus: "Tap to focus",
     walls_half: "Half-height walls", walls_full: "Full-height walls", layer_off: "Hidden", furniture_tool: "Arrange furniture",
   },
   "pt-PT": {
@@ -50,6 +52,8 @@ const S = {
     export_full: "Transferir uma cópia de segurança privada completa",
     north: "N",
     show: "Mostrar", details: "Detalhes", homeassistant_layer: "Dispositivos", no_layers: "Ligue uma camada em Mostrar para ver aqui os detalhes.",
+    view: "Vista", layout_stacked: "Juntos", layout_stacked_d: "Empilhados, como na casa real", layout_exploded: "Separados", layout_exploded_d: "Vista explodida, uma camada por piso",
+    focus_floor: "Focar um piso", roof_d: "Vista de cima, com os painéis", all_floors_back: "Todos os pisos", click_focus: "Clique para focar", tap_focus: "Toque para focar",
     walls_half: "Paredes a meia altura", walls_full: "Paredes inteiras", layer_off: "Oculta", furniture_tool: "Arrumar a mobília",
   },
 };

@@ -664,7 +664,7 @@ export async function finale(ctx, { later = [] } = {}) {
   el.className = "g-ready glass";
   el.setAttribute("role", "status");
   el.innerHTML = `<h2>${L("A sua casa está pronta", "Your house is ready")}</h2>
-    <p>${L("As camadas ligadas estão em Mostrar. Abra Detalhes para ver, por exemplo, as horas de sol de cada divisão.", "Your layers are under Show. Open Details to see, for example, the sun hours in each room.")}</p>
+    <p>${L("As camadas ligadas estão em Mostrar. Abra Detalhes para ver, por exemplo, as horas de sol de cada divisão. Em Vista, separe os pisos ou toque num para o ver de perto.", "Your layers are under Show. Open Details to see, for example, the sun hours in each room. Under View, spread the floors apart or tap one to see it up close.")}</p>
     ${later.length ? `<p class="meta">${L("Ficou para mais tarde:", "Left for later:")} ${later.map((x) => ctx.esc(x)).join(", ")}. ${L("Encontra tudo no menu ⋯, em Configurar a minha casa.", "Find it all in the ⋯ menu, under Set up my house.")}</p>` : ""}
     <div class="row"><button class="btn primary" id="rdGo">${L("Explorar a casa", "Explore the house")}</button><button class="btn" id="rdDet">${L("Abrir detalhes", "Open details")}</button></div>`;
   document.body.appendChild(el);

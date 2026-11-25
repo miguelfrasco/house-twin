@@ -27,7 +27,11 @@
 <nav class="glass filterbar" id="layerBar" aria-label="Layers"></nav>
 <button class="glass details-btn" id="detailsBtn" aria-controls="panel" aria-expanded="false"><span aria-hidden="true">☰</span><span>Details</span></button>
 <aside class="glass panel left" id="panel" inert></aside>
-<div class="glass floorbar" id="floorBar"></div>
+<div class="viewctl" id="viewCtl">
+  <button class="glass view-btn" id="viewBtn" aria-haspopup="menu" aria-expanded="false" aria-controls="viewMenu"></button>
+  <button class="glass view-back" id="viewBack" inert></button>
+  <div class="glass view-menu hidden" id="viewMenu" role="menu"></div>
+</div>
 <div class="glass timebar" id="timeBar">
   <input type="date" id="dateIn" aria-label="Date">
   <input type="range" id="timeIn" min="0" max="1439" step="5" aria-label="Time of day">

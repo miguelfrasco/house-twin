@@ -46,12 +46,26 @@ export class Viewer {
     this.scene.add(this.overlays, this.markers);
     this.labels = []; // {el, pos: Vector3, floorId}
     this.focusFloor = null; // null = all
+    // floor layout: "stacked" (the real house) or "exploded" (floors spread apart); a focused floor overrides both
+    this.layout = "stacked";
+    this.offsets = new Map(); // floorId -> current vertical offset (m)
+    this.roofLift = 0;
+    this._leaving = new Set();
+    this._layoutToken = 0;
+    this.hoverFloor = null;
+    this.onFloorTag = null; // (floorId | "roof") => void, from the floating floor tags in the exploded view
     this.onPick = null;
     this.raycaster = new THREE.Raycaster();
     this._resize = () => this.resize();
     window.addEventListener("resize", this._resize);
     if (this.fit === "element" && window.ResizeObserver) { this._ro = new ResizeObserver(this._resize); this._ro.observe(canvas); }
     canvas.addEventListener("pointerdown", (e) => (this._down = [e.clientX, e.clientY]));
+    canvas.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "mouse" || e.buttons) return;
+      const r = this.rect();
+      this.setHover(this.floorAt(e.clientX - r.left, e.clientY - r.top));
+    });
+    canvas.addEventListener("pointerleave", () => this.setHover(null));
     canvas.addEventListener("pointerup", (e) => {
       if (!this._down || Math.hypot(e.clientX - this._down[0], e.clientY - this._down[1]) > 6) return;
       const r = this.rect();
@@ -63,6 +77,7 @@ export class Viewer {
       this.controls.update();
       if (this.tick.length) { const t = performance.now(); this.tick = this.tick.filter((f) => f(t) !== false); }
       if (this.site?.gates.length) animateGates(this.site.gates);
+      this.syncLayout();
       this.renderer.render(this.scene, this.camera);
       this.updateLabels();
     };
@@ -90,6 +105,7 @@ export class Viewer {
     if (this.house) this.scene.remove(this.house.root);
     if (this.ground) this.scene.remove(this.ground);
     this.clearLabels();
+    this._layoutToken++; this.offsets.clear(); this.roofLift = 0; this._leaving.clear(); this._synced = false; this._proxies = null; this.hoverFloor = null;
     this.house = buildHouse(profile);
     this.scene.add(this.house.root);
     const aerial = profile.site?.aerial;
@@ -136,8 +152,9 @@ export class Viewer {
         this.addLabel(r.name, new THREE.Vector3(x, fl.floor.elevation + 0.2, y), fl.floor.id, "room");
       }
     }
+    this.buildFloorAids();
     this.frame();
-    this.applyFocus();
+    this.applyLayout();
   }
 
   frame() {
@@ -152,31 +169,226 @@ export class Viewer {
     this.sun.shadow.camera.updateProjectionMatrix();
   }
 
-  /** Focus one floor: hide everything above it (cutaway). null = whole house. */
-  setFocus(floorId) { this.focusFloor = floorId; this.view = "house"; this.applyFocus(); }
+  /** Focus one floor: the camera eases in and the other floors drift away and hide. null = all floors.
+   *  opts.animate: ease the change (skipped under prefers-reduced-motion). Returns a Promise. */
+  setFocus(floorId, opts = {}) { this.focusFloor = floorId || null; this.view = "house"; return this.applyLayout(opts); }
 
-  applyFocus() {
-    if (!this.house) return;
-    const fl = this.profile.floors;
-    const idx = this.focusFloor ? fl.findIndex((f) => f.id === this.focusFloor) : fl.length - 1;
-    const maxElev = fl[idx]?.elevation ?? Infinity;
-    for (const [id, x] of this.house.floors) x.group.visible = x.floor.elevation <= maxElev + 1e-6 || id === this.focusFloor;
-    const showRoof = !this.focusFloor;
-    if (this.ground) this.ground.visible = !(this.focusFloor && maxElev < -0.5); // looking at a basement: lift the lawn away
-    this.house.roofs.children.forEach((g) => {
-      const f = fl.find((q) => q.id === g.userData.floorId);
-      g.visible = showRoof || (f && f.elevation < maxElev - 1e-6);
+  /** "stacked" (all floors together, as built) or "exploded" (floors spread apart). Leaves any floor focus. */
+  setLayout(mode, opts = {}) {
+    if (mode !== "stacked" && mode !== "exploded") return Promise.resolve();
+    this.layout = mode; this.focusFloor = null; this.view = "house";
+    return this.applyLayout(opts);
+  }
+
+  floorOrder() { return [...(this.profile?.floors || [])].sort((a, b) => a.elevation - b.elevation); }
+  floorOffset(id) { return this.offsets.get(id) || 0; }
+  /** Extra space between floors in the exploded view: about a third of the house's size, 3.2 to 7 m. */
+  explodeGap() { const b = this.house.bounds; return Math.max(3.2, Math.min(7, Math.max(b.w, b.h) * 0.3)); }
+
+  /** Target offsets for the current layout, focus and view (pure: see layoutTargets below). */
+  applyLayout({ animate = false } = {}) {
+    if (!this.house) return Promise.resolve();
+    const order = this.floorOrder();
+    const visible = new Set(order.filter((f) => this.house.floors.get(f.id)?.group.visible !== false).map((f) => f.id));
+    const plan = layoutTargets({
+      order, layout: this.layout, focus: this.focusFloor, view: this.view, gap: this.explodeGap(),
+      current: new Map(order.map((f) => [f.id, this.floorOffset(f.id)])), visible, prevFocus: this._prevFocus ?? null,
     });
-    // half-height walls: roofs vanish in the house view (they still cast shadows) and come back in the roof view
-    const roofSolid = this.house.display?.mode !== "half" || this.view === "roof";
+    this._leaving = new Set(plan.leaving);
+    for (const [id, y] of plan.from) this.offsets.set(id, y); // floors coming in start a little away
+    const cam = this.cameraFor(plan.to, plan.roof);
+    const p0 = this.camera.position.clone(), t0 = this.controls.target.clone(), r0 = this.roofLift;
+    const from = new Map(plan.from);
+    this.applyFocus();
+    const token = ++this._layoutToken;
+    const ms = animate && !reducedMotion() ? 760 : 0;
+    this._animating = true;
+    return this.animate(ms, (k) => {
+      if (token !== this._layoutToken) return;
+      for (const [id, y] of plan.to) this.offsets.set(id, from.get(id) + (y - from.get(id)) * k);
+      this.roofLift = r0 + (plan.roof - r0) * k;
+      if (cam) { this.camera.position.lerpVectors(p0, cam.pos, k); this.controls.target.lerpVectors(t0, cam.target, k); }
+    }, easeInOut).then(() => {
+      if (token !== this._layoutToken) return;
+      this._animating = false;
+      this._leaving.clear();
+      this._prevFocus = this.focusFloor;
+      this.applyFocus();
+    });
+  }
+
+  /** Where the camera goes for a layout: keeps the current compass direction, changes distance and height. */
+  cameraFor(to, roofLift) {
+    const b = this.house.bounds, span = Math.max(b.w, b.h, 8);
+    const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target); dir.y = 0;
+    if (dir.lengthSq() < 1e-6) dir.set(0.4, 0, 0.9);
+    dir.normalize();
+    let target, dist, elev;
+    if (this.view === "roof") {
+      const top = Math.max(...this.profile.floors.map((f) => f.elevation + f.height));
+      target = new THREE.Vector3(b.cx, top, b.cy); dist = span * 1.6; elev = 62;
+    } else if (this.focusFloor) {
+      const f = this.profile.floors.find((q) => q.id === this.focusFloor);
+      const box = this.floorBoxes?.get(this.focusFloor);
+      const c = box && !box.isEmpty() ? box.getCenter(new THREE.Vector3()) : new THREE.Vector3(b.cx, 0, b.cy);
+      const s = box && !box.isEmpty() ? Math.max(box.max.x - box.min.x, box.max.z - box.min.z, 6) : span;
+      target = new THREE.Vector3(c.x, (f?.elevation || 0) + 0.6, c.z); dist = s * 1.65; elev = 50;
+    } else {
+      const fl = this.profile.floors;
+      const bottom = Math.min(...fl.map((f) => f.elevation));
+      const top = Math.max(...fl.map((f) => f.elevation + f.height + (to.get(f.id) || 0))) + (roofLift ? roofLift + 1.5 : 0);
+      const ex = roofLift > 0 || [...to.values()].some((y) => y > 0.01);
+      target = new THREE.Vector3(b.cx, ex ? (bottom + top) / 2 : 1.5, b.cy);
+      dist = ex ? Math.max(span * 2.2, (top - bottom) * 2.3) : span * 2.2;
+      elev = ex ? 22 : 32;
+    }
+    dist *= Math.max(1, 0.8 / Math.max(0.2, this.camera.aspect)); // portrait screens: step back so the width fits
+    const r = (elev * Math.PI) / 180;
+    const pos = target.clone().addScaledVector(dir, Math.cos(r) * dist).add(new THREE.Vector3(0, Math.sin(r) * dist, 0));
+    return { target, pos };
+  }
+
+  /** Per floor: a box (for framing and hover), a faint cyan cage, an invisible hit box, and a floating tag. */
+  buildFloorAids() {
+    this.floorBoxes = new Map(); this.floorHits = []; this.cages = new Map();
+    for (const [id, x] of this.house.floors) {
+      x.group.updateMatrixWorld(true);
+      const box = new THREE.Box3();
+      const one = new THREE.Box3();
+      for (const r of [x.structure, ...x.roomMeshes]) r.traverseVisible((o) => { if (o.isMesh) box.union(one.setFromObject(o)); }); // cropped model parts don't count
+      if (box.isEmpty()) continue;
+      this.floorBoxes.set(id, box);
+      const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+      const cage = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(size.x + 0.3, size.y + 0.1, size.z + 0.3)), new THREE.LineBasicMaterial({ color: 0x5ce1ff, transparent: true, opacity: 0, depthWrite: false }));
+      cage.position.copy(c); cage.renderOrder = 3; cage.raycast = () => {}; cage.userData.aid = true; cage.visible = false;
+      const hit = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y + 0.4, size.z), new THREE.MeshBasicMaterial({ visible: false }));
+      hit.position.copy(c); hit.userData = { aid: true, floorHit: id };
+      x.group.add(cage, hit);
+      this.cages.set(id, { cage, k: 0 });
+      this.floorHits.push(hit);
+      this.addTag(x.floor.name, new THREE.Vector3(box.max.x + 0.4, c.y, c.z), id);
+    }
+    if (this.house.roofs.children.length) {
+      const g = this.house.roofs.children[0];
+      const box = new THREE.Box3().setFromObject(this.house.roofs);
+      if (!box.isEmpty()) this.addTag(null, new THREE.Vector3(box.max.x + 0.4, box.max.y - 0.4, (box.min.z + box.max.z) / 2), g.userData.floorId, true);
+    }
+  }
+
+  addTag(name, pos, floorId, roof = false) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "lbl ftag";
+    el.innerHTML = `<b></b><small></small>`;
+    el.querySelector("b").textContent = name || "";
+    el.onclick = (e) => { e.stopPropagation(); this.onFloorTag?.(roof ? "roof" : floorId); };
+    el.onpointerenter = () => this.setHover(roof ? null : floorId);
+    el.onpointerleave = () => this.setHover(null);
+    this.labelsEl.appendChild(el);
+    this.labels.push({ el, pos, floorId, tag: true, roof });
+  }
+
+  /** Text for the floating tags (the app knows the language). */
+  setTagText(fn) { for (const l of this.labels) if (l.tag) { const [b, s] = fn(l.roof ? "roof" : l.floorId); if (b != null) l.el.querySelector("b").textContent = b; l.el.querySelector("small").textContent = s || ""; } }
+
+  /** The floor under a canvas point (all-floors views only). */
+  floorAt(cx, cy) {
+    if (!this.floorHits?.length || this.focusFloor || this.view !== "house" || this.fit !== "window") return null;
+    const R = this.rect();
+    this.raycaster.setFromCamera(new THREE.Vector2((cx / R.width) * 2 - 1, -(cy / R.height) * 2 + 1), this.camera);
+    const hits = this.raycaster.intersectObjects(this.floorHits.filter((h) => h.parent?.visible), false);
+    return hits[0]?.object.userData.floorHit || null;
+  }
+
+  setHover(id) {
+    if (id === this.hoverFloor) return;
+    this.hoverFloor = id;
+    for (const l of this.labels) if (l.tag) l.el.classList.toggle("hot", !l.roof && l.floorId === id);
+    if (this.fit === "window") this.canvas.style.cursor = id ? "pointer" : "";
+  }
+
+  /** Every frame: move floors, roofs, panels, markers and overlays by their floor's offset; fade the cages. */
+  syncLayout() {
+    if (!this.house) return;
+    const active = this._animating || this.roofLift > 1e-3 || [...this.offsets.values()].some((y) => Math.abs(y) > 1e-3);
+    if (active || this._synced) {
+      for (const [id, x] of this.house.floors) x.group.position.y = this.floorOffset(id);
+      const lift = (o) => { if (o.userData._y == null) o.userData._y = o.position.y; o.position.y = o.userData._y + this.floorOffset(o.userData.floorId) + this.roofLift; };
+      this.house.roofs.children.forEach(lift);
+      this.house.pv.children.forEach(lift);
+      for (const m of [...this.markers.children, ...this.overlays.children]) {
+        if (!m.userData.floorId) continue;
+        if (m.userData._y == null) m.userData._y = m.position.y;
+        m.position.y = m.userData._y + this.floorOffset(m.userData.floorId);
+      }
+      this.roofLook();
+      this._synced = active;
+    }
+    if (this.cages) {
+      const ex = this.layout === "exploded" && !this.focusFloor && this.view === "house";
+      for (const [id, c] of this.cages) {
+        const want = this.focusFloor || this.view !== "house" ? 0 : this.hoverFloor === id ? 0.85 : ex ? 0.22 : 0;
+        c.k += (want - c.k) * 0.18;
+        c.cage.material.opacity = c.k;
+        c.cage.visible = c.k > 0.01;
+      }
+    }
+  }
+
+  /** Roofs: invisible shadow casters over half-height walls, solid in the roof view or when lifted off in the exploded view. */
+  roofLook() {
+    const lifted = this.roofLift > 0.05 || (this.layout === "exploded" && !this.focusFloor && this.view === "house");
+    const solid = this.house.display?.mode !== "half" || this.view === "roof" || lifted;
+    const key = `${solid}|${lifted}`;
+    if (this._roofKey === key && this._roofHouse === this.house) return;
+    this._roofKey = key; this._roofHouse = this.house;
     this.house.roofs.traverse((o) => {
       if (!o.isMesh) return;
       if (!o.userData.solidMat) o.userData.solidMat = o.material;
-      o.material = roofSolid ? o.userData.solidMat : CASTER;
+      o.material = solid ? o.userData.solidMat : CASTER;
+      o.castShadow = !lifted; // a lifted roof must not shade the floor below it
     });
-    this.house.pv.visible = showRoof && this.pvVisible !== false;
-    const roofView = this.view === "roof"; // looking at the roof: things inside the house would float on it
-    for (const l of this.labels) l.hidden = !!(l.floorId && this.floorHidden(l.floorId)) || (!this.focusFloor && l.el.classList.contains("room")) || (roofView && !!l.floorId);
+    this.house.pv.traverse((o) => { if (o.isMesh) o.castShadow = !lifted; });
+  }
+
+  /** Occluders for sun exposure at the floors' real heights, whatever the layout on screen. */
+  sunOccluders() {
+    const occ = this.house.occluders;
+    const moved = this.roofLift > 1e-3 || [...this.offsets.values()].some((y) => Math.abs(y) > 1e-3);
+    if (!moved) return occ;
+    if (this._proxies?.src === occ && this._proxies.n === occ.length) return this._proxies.list;
+    const save = new Map(this.offsets), lift = this.roofLift;
+    this.offsets.clear(); this.roofLift = 0; this._synced = true; this.syncLayout();
+    this.scene.updateMatrixWorld(true);
+    const list = occ.map((o) => {
+      const p = new THREE.Mesh(o.geometry, o.material);
+      p.matrixAutoUpdate = false; p.matrixWorldAutoUpdate = false;
+      p.matrixWorld.copy(o.matrixWorld); p.matrix.copy(o.matrixWorld);
+      return p;
+    });
+    for (const [k, v] of save) this.offsets.set(k, v);
+    this.roofLift = lift; this._synced = true; this.syncLayout();
+    this.scene.updateMatrixWorld(true);
+    this._proxies = { src: occ, n: occ.length, list };
+    return list;
+  }
+
+  applyFocus() {
+    if (!this.house) return;
+    const fl = this.profile.floors, focus = this.focusFloor, roofView = this.view === "roof";
+    const ex = this.layout === "exploded" && !focus && !roofView;
+    const shown = (id) => !focus || id === focus || this._leaving.has(id);
+    for (const [id, x] of this.house.floors) x.group.visible = shown(id);
+    const ff = focus && fl.find((f) => f.id === focus);
+    if (this.ground) this.ground.visible = !ff || Math.abs(ff.elevation) <= 0.5; // a basement or an upper floor floats on its own
+    if (this.site) this.site.group.visible = !ff || ff.elevation <= 0.5;
+    this.house.roofs.children.forEach((g) => (g.visible = !focus));
+    this.roofLook();
+    this.house.pv.visible = !focus && this.pvVisible !== false;
+    for (const l of this.labels) {
+      if (l.tag) { l.hidden = !ex || (!l.roof && !shown(l.floorId)) || (l.roof && !this.house.roofs.children.length); continue; }
+      l.hidden = !!(l.floorId && this.floorHidden(l.floorId)) || (!focus && l.el.classList.contains("room")) || (roofView && !!l.floorId);
+    }
     this.markers.children.forEach((m) => (m.visible = (!m.userData.floorId || !this.floorHidden(m.userData.floorId)) && !(roofView && m.userData.floorId)));
     this.overlays.children.forEach((m) => (m.visible = !m.userData.floorId || !this.floorHidden(m.userData.floorId)));
   }
@@ -185,11 +397,7 @@ export class Viewer {
     const x = this.house?.floors.get(floorId);
     if (!x) return false;
     if (!x.group.visible) return true;
-    if (this.focusFloor && floorId !== this.focusFloor) {
-      // show lower floors only faintly: hide their labels and markers
-      return true;
-    }
-    return false;
+    return !!(this.focusFloor && floorId !== this.focusFloor);
   }
 
   /** Sun position: { az, el } in compass degrees. */
@@ -234,10 +442,13 @@ export class Viewer {
     const v = new THREE.Vector3();
     for (const l of this.labels) {
       if (l.hidden || l.off) { l.el.style.display = "none"; continue; }
-      v.copy(l.pos).project(this.camera);
+      v.copy(l.pos);
+      if (l.floorId) v.y += this.floorOffset(l.floorId) + (l.roof ? this.roofLift : 0);
+      v.project(this.camera);
       if (v.z > 1 || v.x < -1.1 || v.x > 1.1 || v.y < -1.1 || v.y > 1.1) { l.el.style.display = "none"; continue; }
       l.el.style.display = "";
-      l.el.style.left = `${((v.x + 1) / 2) * w}px`;
+      const x = ((v.x + 1) / 2) * w;
+      l.el.style.left = `${l.tag ? Math.max(8, Math.min(w - (l.el.offsetWidth || 120) - 8, x)) : x}px`; // floor tags stay on screen
       l.el.style.top = `${((1 - v.y) / 2) * h}px`;
     }
   }
@@ -264,8 +475,9 @@ export class Viewer {
     for (const [, x] of this.house.floors) if (x.group.visible && !this.floorHidden(x.floor.id)) targets.push(...x.roomMeshes);
     const ground = this.ground?.visible ? this.ground.children : [];
     const site = this.site ? this.site.group.children : [];
+    const floorHit = !this.focusFloor && this.view === "house" && this.floorHits?.length ? this.raycaster.intersectObjects(this.floorHits.filter((h) => h.parent?.visible), false)[0]?.object.userData.floorHit || null : null;
     const hit = this.raycaster.intersectObjects([...targets, ...ground, ...site], false)[0];
-    if (!hit) return;
+    if (!hit) return floorHit ? this.onPick({ floorHit }) : undefined;
     const u = hit.object.userData;
     if (u.kind === "gate") return this.onPick({ gate: u, pos: [hit.point.x, hit.point.z] });
     let floorId = u.floorId || this.focusFloor;
@@ -273,7 +485,8 @@ export class Viewer {
       let best = Infinity;
       for (const f of this.profile.floors) { const d = Math.abs(f.elevation - hit.point.y); if (d < best) { best = d; floorId = f.id; } }
     }
-    this.onPick({ floorId, roomId: u.roomId || null, pos: [hit.point.x, hit.point.z], ground: u.kind === "ground" || site.includes(hit.object) });
+    const ground2 = u.kind === "ground" || site.includes(hit.object);
+    this.onPick({ floorId, roomId: u.roomId || null, pos: [hit.point.x, hit.point.z], ground: ground2, floorHit: ground2 ? null : floorHit });
   }
 
   /** Simple glowing marker sphere. */
@@ -309,14 +522,9 @@ export class Viewer {
   }
 
   /** Look down at the roofs (solar layout); shows every floor and roof. */
-  roofView() {
-    this.setFocus(null);
-    this.view = "roof"; this.applyFocus();
-    const b = this.house.bounds, span = Math.max(b.w, b.h, 8);
-    const top = Math.max(...this.profile.floors.map((f) => f.elevation + f.height));
-    this.controls.target.set(b.cx, top, b.cy);
-    this.camera.position.set(b.cx + span * 0.35, top + span * 1.35, b.cy + span * 0.55);
-    this.controls.update();
+  roofView(opts = {}) {
+    this.focusFloor = null; this.view = "roof";
+    return this.applyLayout(opts); // the floors come back together under the roof
   }
 
   /** Open/closed state for gates linked to Home Assistant covers: { entity_id: "open" | "closed" | ... }. */
@@ -346,6 +554,33 @@ export class Viewer {
     this.clearLabels();
     this.renderer.dispose();
   }
+}
+
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Plan the floor offsets for a layout change (pure, tested).
+ *  order: floors bottom to top; current: Map id -> offset now; visible: Set of floors on screen now.
+ *  Returns { from, to, leaving, roof }: start and end offsets, the floors that drift away and hide, the roof lift. */
+export function layoutTargets({ order, layout, focus, view, gap, current, visible, prevFocus = null }) {
+  const ex = layout === "exploded" && !focus && view === "house";
+  const fi = focus ? order.findIndex((f) => f.id === focus) : -1;
+  const pi = prevFocus ? order.findIndex((f) => f.id === prevFocus) : -1;
+  const from = new Map(), to = new Map(), leaving = [];
+  order.forEach((f, i) => {
+    const now = current.get(f.id) || 0;
+    const rest = ex ? i * gap : 0;
+    const show = fi < 0 || i === fi;
+    if (show) {
+      to.set(f.id, rest);
+      // coming back into view: start a little away, on its own side of the floor that was in focus
+      from.set(f.id, visible.has(f.id) ? now : rest + (pi >= 0 && pi !== i ? Math.sign(i - pi) * gap * 0.6 : 0));
+    } else if (visible.has(f.id)) {
+      leaving.push(f.id);
+      from.set(f.id, now);
+      to.set(f.id, now + Math.sign(i - fi) * gap * 0.8);
+    } else { from.set(f.id, now); to.set(f.id, now); }
+  });
+  return { from, to, leaving, roof: ex ? gap * 0.9 : 0 };
 }
 
 // cubic-bezier(0.23, 1, 0.32, 1) is close to an ease-out-quint

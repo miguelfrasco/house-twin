@@ -41,7 +41,7 @@ const ctx = {
     if (!floor) return null; // the profile changed while a module was still loading
     const extra = [];
     if (floor === this.profile.floors[0] && this.profile.site?.garden) extra.push({ id: "_garden", poly: this.profile.site.garden });
-    const p = computeExposure({ profile: this.profile, floor, occluders: this.viewer.house.occluders, date: this.state.date, extraPolys: extra, cell: 0.5, onProgress });
+    const p = computeExposure({ profile: this.profile, floor, occluders: this.viewer.sunOccluders(), date: this.state.date, extraPolys: extra, cell: 0.5, onProgress });
     this.exposureCache.set(key, p);
     return p;
   },
@@ -113,7 +113,7 @@ function renderChrome() {
   document.querySelectorAll("[data-t]").forEach((el) => (el.textContent = t(el.dataset.t)));
   // layer filters (multi-select)
   const bar = $("#layerBar");
-  bar.classList.remove("hidden"); $("#detailsBtn").classList.remove("hidden");
+  bar.classList.remove("hidden"); $("#detailsBtn").classList.remove("hidden"); $("#viewCtl").classList.remove("hidden");
   bar.innerHTML = `<span class="fl-lbl">${esc(t("show"))}</span>`;
   for (const id of available()) {
     const m = mod(id), on = ctx.state.layers.has(id);
@@ -125,22 +125,82 @@ function renderChrome() {
     b.onclick = () => setLayer(id, !ctx.state.layers.has(id));
     bar.appendChild(b);
   }
-  // floors
-  const fb = $("#floorBar");
-  fb.innerHTML = "";
-  const roofOn = ctx.viewer.view === "roof";
-  const mk = (id, label) => { const b = document.createElement("button"); b.textContent = label; b.className = !roofOn && ctx.state.floor === id ? "on" : ""; b.onclick = () => setFloor(id); fb.appendChild(b); };
-  if (p.roofs?.length) { const b = document.createElement("button"); b.textContent = t("roof"); b.id = "roofBtn"; b.className = roofOn ? "on" : ""; b.onclick = () => { setFloor(null); ctx.viewer.roofView(); renderChrome(); }; fb.appendChild(b); }
-  mk(null, t("all_floors"));
-  [...p.floors].reverse().forEach((f) => mk(f.id, f.name));
+  renderViewCtl();
   $("#detailsBtn").querySelector("span:last-child").textContent = t("details");
 }
 
-function setFloor(id) {
+function setFloor(id, animate = true) {
+  if (id && !ctx.floorById(id)) id = null;
   ctx.state.floor = id;
-  ctx.viewer.setFocus(id);
+  closeViewMenu();
+  ctx.viewer.setFocus(id, { animate });
   renderChrome();
   each("onFloor");
+  renderPanel();
+}
+
+// ---- View control (the "hamburger"): floors together or apart, or one floor in focus
+const LAYERS_ICON = `<svg class="vi" viewBox="0 0 20 20" aria-hidden="true"><path class="vi-a" d="M3 6.5 10 3.5l7 3-7 3z"/><path class="vi-b" d="M3 10 10 7l7 3-7 3z"/><path class="vi-c" d="M3 13.5 10 10.5l7 3-7 3z"/></svg>`;
+const BACK_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+function viewMode() { return ctx.viewer.view === "roof" ? "roof" : ctx.state.floor ? "focus" : ctx.viewer.layout; }
+
+function renderViewCtl() {
+  const p = ctx.profile, v = ctx.viewer, mode = viewMode();
+  const btn = $("#viewBtn"), back = $("#viewBack"), menu = $("#viewMenu");
+  const current = mode === "roof" ? t("roof") : mode === "focus" ? ctx.floorById(ctx.state.floor)?.name : t(mode === "exploded" ? "layout_exploded" : "layout_stacked");
+  btn.dataset.mode = mode;
+  btn.innerHTML = `${LAYERS_ICON}<span class="vb-k">${esc(t("view"))}</span><span class="vb-v">${esc(current || "")}</span>`;
+  btn.setAttribute("aria-label", `${t("view")}: ${current || ""}`);
+  back.classList.toggle("on", mode === "focus" || mode === "roof");
+  back.inert = !(mode === "focus" || mode === "roof");
+  back.innerHTML = `${BACK_ICON}<span>${esc(t("all_floors_back"))}</span>`;
+  const item = (attrs, on, title, sub, icon = "") => `<button role="menuitemradio" aria-checked="${on}" class="vm-i${on ? " on" : ""}" ${attrs}>${icon}<span class="vm-t"><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span></button>`;
+  const lay = (m) => item(`data-layout="${m}"`, mode === m, t(`layout_${m}`), t(`layout_${m}_d`), `<span class="vm-ic" data-mode="${m}">${LAYERS_ICON}</span>`);
+  const floors = [...p.floors].sort((a, b) => b.elevation - a.elevation);
+  menu.innerHTML = `<div class="vm-h">${esc(t("all_floors_back"))}</div>${lay("stacked")}${lay("exploded")}
+    <div class="vm-h">${esc(t("focus_floor"))}</div>
+    ${p.roofs?.length ? item(`data-floor="roof"`, mode === "roof", t("roof"), t("roof_d")) : ""}
+    ${floors.map((f) => item(`data-floor="${esc(f.id)}"`, mode === "focus" && ctx.state.floor === f.id, f.name, "")).join("")}`;
+  menu.querySelectorAll("[data-layout]").forEach((b) => (b.onclick = () => setLayout(b.dataset.layout)));
+  menu.querySelectorAll("[data-floor]").forEach((b) => (b.onclick = () => (b.dataset.floor === "roof" ? showRoof() : setFloor(b.dataset.floor))));
+  const touch = matchMedia("(hover: none)").matches;
+  v.setTagText((id) => [id === "roof" ? t("roof") : null, touch ? t("tap_focus") : t("click_focus")]);
+}
+
+function toggleViewMenu() {
+  const menu = $("#viewMenu");
+  if (!menu.classList.contains("hidden")) return closeViewMenu();
+  $("#menu").classList.add("hidden");
+  renderViewCtl();
+  menu.classList.remove("hidden");
+  $("#viewBtn").setAttribute("aria-expanded", "true");
+  (menu.querySelector(".vm-i.on") || menu.querySelector(".vm-i"))?.focus({ preventScroll: true });
+}
+
+function closeViewMenu() {
+  $("#viewMenu")?.classList.add("hidden");
+  $("#viewBtn")?.setAttribute("aria-expanded", "false");
+}
+
+function setLayout(mode) {
+  localStorage.setItem("ht_layout", mode);
+  const hadFloor = !!ctx.state.floor;
+  ctx.state.floor = null;
+  closeViewMenu();
+  ctx.viewer.setLayout(mode, { animate: true });
+  renderChrome();
+  if (hadFloor) each("onFloor");
+  renderPanel();
+}
+
+function showRoof(animate = true) {
+  const hadFloor = !!ctx.state.floor;
+  ctx.state.floor = null;
+  closeViewMenu();
+  ctx.viewer.roofView({ animate });
+  renderChrome();
+  if (hadFloor) each("onFloor");
   renderPanel();
 }
 
@@ -198,6 +258,8 @@ function routePick(pick) {
     return mod(owner || ctx.state.module)?.onPick?.(ctx, pick);
   }
   if (pick.gate && ctx.state.layers.has("homeassistant")) return mod("homeassistant").onPick?.(ctx, pick);
+  // all floors on screen: a click on a floor focuses it (markers, gates and placing keep priority)
+  if (pick.floorHit && !ctx.state.floor && ctx.viewer.view === "house") return setFloor(pick.floorHit);
   return mod(ctx.state.module)?.onPick?.(ctx, pick);
 }
 
@@ -250,7 +312,17 @@ function bindChrome() {
   };
   $("#detailsBtn").onclick = () => openPanel(true);
   $("#menuBtn").onclick = (e) => { e.stopPropagation(); toggleMenu(); };
-  document.addEventListener("click", (e) => { if (!$("#menu").contains(e.target)) $("#menu").classList.add("hidden"); });
+  document.addEventListener("click", (e) => {
+    if (!$("#menu").contains(e.target)) $("#menu").classList.add("hidden");
+    if (!$("#viewCtl").contains(e.target)) closeViewMenu();
+  });
+  $("#viewBtn").onclick = (e) => { e.stopPropagation(); toggleViewMenu(); };
+  $("#viewBack").onclick = () => setFloor(null);
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || document.querySelector(".sheet:not(.hidden), .guide, .wiz, .ed")) return;
+    if (!$("#viewMenu").classList.contains("hidden")) { closeViewMenu(); $("#viewBtn").focus(); return; }
+    if (ctx.state.floor || ctx.viewer.view === "roof") setFloor(null);
+  });
 }
 
 function toggleMenu() {
@@ -316,6 +388,8 @@ async function boot() {
   if (qs.get("lang")) setLang(qs.get("lang") === "pt" ? "pt-PT" : qs.get("lang"));
   await api.init();
   ctx.viewer = new Viewer($("#scene"), $("#labels"));
+  ctx.viewer.layout = ["stacked", "exploded"].includes(qs.get("layout")) ? qs.get("layout") : localStorage.getItem("ht_layout") === "exploded" ? "exploded" : "stacked";
+  ctx.viewer.onFloorTag = (id) => (id === "roof" ? showRoof() : setFloor(id));
   bindChrome();
   const r = await api.loadProfile();
   if (r.needsLogin) { $("#loading").classList.add("done"); renderChromeEmpty(); showLogin(); return; }
@@ -338,8 +412,8 @@ async function boot() {
   await reload();
   openPanel(ctx.state.panel);
   if (ctx.state.module === "furniture") await focus("furniture", true);
-  if (qs.has("floor")) setFloor(qs.get("floor"));
-  if (qs.get("view") === "roof") { ctx.viewer.roofView(); renderChrome(); }
+  if (qs.has("floor")) setFloor(qs.get("floor"), false);
+  if (qs.get("view") === "roof") showRoof(false);
   $("#loading").classList.add("done");
   window.__appReady = true;
   if (qs.get("wizard") === "1") (await import("./wizard/wizard.js")).openWizard(ctx);
@@ -347,7 +421,7 @@ async function boot() {
 }
 
 function renderChromeEmpty() {
-  $("#detailsBtn").classList.add("hidden"); $("#layerBar").classList.add("hidden");
+  $("#detailsBtn").classList.add("hidden"); $("#layerBar").classList.add("hidden"); $("#viewCtl").classList.add("hidden");
   $("#houseName").textContent = t("app");
   document.querySelectorAll("[data-t]").forEach((el) => (el.textContent = t(el.dataset.t)));
   $("#langBtn").textContent = getLang() === "pt-PT" ? "EN" : "PT";
